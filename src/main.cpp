@@ -1,27 +1,34 @@
 #include <MemCore/AllocatorConcept.hpp>
+#include <MemCore/MallocUpstream.hpp>
 #include <MemCore/Align.hpp>
 #include <iostream>
 
 int main() 
 {
-    // Take a misaligned address (for example, 1003)
-    void* bad_ptr = reinterpret_cast<void*>(1003);
-    
-    // Try to align it to an 8-byte boundary
-    void* aligned_ptr = MemCore::AlignForward(bad_ptr, 8);
+    std::cout << "--- MemCore Sandbox ---" << std::endl;
 
-    std::cout << "MemCore Sandbox Running!" << std::endl;
-    std::cout << "Original address: " << bad_ptr << std::endl;
-    std::cout << "Aligned (8 bytes): " << aligned_ptr << std::endl;
+    MemCore::MallocUpstream upstream;
 
-    // Verify it with our own function
-    if (MemCore::IsAligned(aligned_ptr, 8)) 
+    MemCore::Block block = upstream.allocate(100, 32);
+
+    if (block.ptr) 
     {
-        std::cout << "Alignment check: SUCCESS!" << std::endl;
+        std::cout << "Allocated " << block.size << " bytes at address: " << block.ptr << std::endl;
+        
+        if (MemCore::IsAligned(block.ptr, 32)) 
+        {
+            std::cout << "SUCCESS: Pointer is perfectly aligned to 32 bytes!" << std::endl;
+        } 
+        else 
+        {
+            std::cout << "ERROR: Pointer alignment failed!" << std::endl;
+        }
+
+        upstream.deallocate(block.ptr, block.size);
     } 
     else 
     {
-        std::cout << "Alignment check: FAILED!" << std::endl;
+        std::cout << "Allocation failed!" << std::endl;
     }
 
     return 0;
