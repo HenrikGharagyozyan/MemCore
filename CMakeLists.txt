@@ -10,3 +10,6 @@ add_library(MemCore INTERFACE)
 target_include_directories(MemCore INTERFACE 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+
+add_executable(MemCoreTest src/main.cpp)
+target_link_libraries(MemCoreTest PRIVATE MemCore)
