@@ -1,5 +1,5 @@
 #pragma once
-#include <cstddef> // Для std::size_t
+#include <cstddef> // For std::size_t
 
 namespace MemCore 
 {
