@@ -11,5 +11,28 @@ target_include_directories(MemCore INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-add_executable(MemCoreTest src/main.cpp)
-target_link_libraries(MemCoreTest PRIVATE MemCore)
+# ==========================================
+# ПОДКЛЮЧЕНИЕ GOOGLE TEST
+# ==========================================
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG        v1.14.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+# Перечисляем КАЖДЫЙ файл с тестами здесь
+add_executable(MemCore_UnitTests 
+    tests/AlignTest.cpp
+    tests/LinearAllocatorTest.cpp
+    tests/StackAllocatorTest.cpp
+)
+
+target_link_libraries(MemCore_UnitTests PRIVATE MemCore GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(MemCore_UnitTests)
