@@ -9,10 +9,11 @@ add_library(MemCore INTERFACE)
 
 target_include_directories(MemCore INTERFACE 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 # ==========================================
-# ПОДКЛЮЧЕНИЕ GOOGLE TEST
+# GOOGLE TEST INTEGRATION
 # ==========================================
 include(FetchContent)
 FetchContent_Declare(
@@ -25,7 +26,7 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
-# Перечисляем КАЖДЫЙ файл с тестами здесь
+# List EVERY test file here
 add_executable(MemCore_UnitTests 
     tests/AlignTest.cpp
     tests/LinearAllocatorTest.cpp
