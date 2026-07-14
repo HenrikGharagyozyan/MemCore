@@ -11,14 +11,14 @@ namespace MemCore
     class StackAllocator 
     {
     private:
-        // Техническая структура, которая будет невидимо жить перед пользовательской памятью
+        // Internal structure that lives invisibly before user memory
         struct Header 
         {
             std::size_t previous_offset;
         };
 
-        Block m_memory;        // Backing store (сырая память от Upstream)
-        std::size_t m_offset;  // Текущее положение ползунка
+        Block m_memory;        // Backing store (raw memory from Upstream)
+        std::size_t m_offset;  // Current cursor position
 
     public:
         using Marker = std::size_t;
@@ -33,36 +33,36 @@ namespace MemCore
         {
             std::byte* base = static_cast<std::byte*>(m_memory.ptr);
             
-            // 1. Считаем, где минимально могут начаться пользовательские данные.
-            // Они должны идти как минимум после текущего смещения + размер заголовка.
+            // 1. Calculate where user data can minimally begin.
+            // It must start at least after the current offset plus the header size.
             std::byte* earliest_payload_ptr = base + m_offset + sizeof(Header);
             
-            // 2. Выравниваем указатель пользователя под его требования
+            // 2. Align the user pointer to its requirements
             void* aligned_payload_ptr = AlignForward(earliest_payload_ptr, alignment);
             std::byte* payload_ptr = static_cast<std::byte*>(aligned_payload_ptr);
             
-            // 3. Заголовок должен лежать строго ПЕРЕД выровненным указателем пользователя
+            // 3. The header must reside immediately before the aligned user pointer
             std::byte* header_ptr = payload_ptr - sizeof(Header);
             
-            // 4. Проверяем, хватает ли у нас памяти во всем чанке
+            // 4. Check whether there is enough memory in the block
             std::size_t new_offset = (payload_ptr + size) - base;
             if (new_offset > m_memory.size) 
             {
-                return { nullptr, 0 }; // Память переполнена
+                return { nullptr, 0 }; // Out of memory
             }
 
-            // 5. Записываем информацию в заголовок. 
-            // Используем placement new для конструирования структуры в сырой памяти.
+            // 5. Store information in the header.
+            // Use placement new to construct the structure in raw memory.
             Header* header = ::new (static_cast<void*>(header_ptr)) Header();
             header->previous_offset = m_offset;
 
-            // 6. Сдвигаем ползунок на новое место
+            // 6. Move the cursor to the new location
             m_offset = new_offset;
 
             return { aligned_payload_ptr, size };
         }
 
-        // Точечное освобождение памяти (должно происходить строго в обратном порядке!)
+        // Fine-grained memory deallocation (must occur strictly in reverse order!)
         void deallocate(void* ptr, std::size_t size) noexcept 
         {
             if (!ptr) 
@@ -71,20 +71,20 @@ namespace MemCore
             std::byte* base = static_cast<std::byte*>(m_memory.ptr);
             std::byte* payload_ptr = static_cast<std::byte*>(ptr);
 
-            // Проверка на LIFO: освобождаемый блок обязан быть самым верхним в стеке!
-            // То есть текущий m_offset должен в точности равняться концу этого блока.
+            // LIFO check: the block being freed must be the topmost block!
+            // In other words, current m_offset should exactly equal the end of this block.
             assert((payload_ptr + size) - base == m_offset && "Out-of-order deallocation in StackAllocator! LIFO violated.");
 
-            // Отступаем назад, чтобы прочитать заголовок
+            // Step back to read the header
             std::byte* header_ptr = payload_ptr - sizeof(Header);
             Header* header = reinterpret_cast<Header*>(header_ptr);
 
-            // Просто откатываем ползунок назад к состоянию до этой аллокации
+            // Simply roll the cursor back to its state before this allocation
             m_offset = header->previous_offset;
         }
 
-        // Дополнительный профессиональный API: позволяет сделать "закладку" 
-        // и откатиться к ней разом, удалив целую пачку объектов.
+        // Additional professional API: lets you create a marker
+        // and roll back to it all at once, freeing a batch of objects.
         Marker get_marker() const noexcept 
         {
             return m_offset;

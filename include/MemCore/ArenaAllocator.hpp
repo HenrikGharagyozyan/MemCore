@@ -12,40 +12,40 @@ namespace MemCore
     class ArenaAllocator 
     {
     private:
-        // Узел интрузивного списка, который будет жить в начале каждого большого чанка
+        // Intrusive list node stored at the beginning of each large block
         struct BlockNode 
         {
             BlockNode* next;
             std::size_t capacity;
             std::size_t offset;
         };
+         
+        Upstream& m_upstream;             // Raw memory source
+        std::size_t m_default_block_size; // Default block size (for example, 4 KB)
+        BlockNode* m_head;                // Pointer to the current active block
 
-        Upstream& m_upstream;            // Источник сырой памяти
-        std::size_t m_default_block_size;// Размер чанка по умолчанию (например, 4КБ)
-        BlockNode* m_head;               // Указатель на текущий активный чанк
-
-        // Внутренний метод для запроса нового чанка у Upstream
+        // Internal helper to request a new block from Upstream
         BlockNode* allocate_new_block(std::size_t min_size) noexcept 
         {
-            // Нам нужно уместить размер объекта + заголовок нашего узла списка
+            // We need to fit the object size plus our node header
             std::size_t required_size = min_size + sizeof(BlockNode);
             std::size_t size_to_alloc = std::max(required_size, m_default_block_size);
 
-            // Запрашиваем память у Upstream с выравниванием под наш заголовок
+            // Request memory from Upstream aligned for our header
             Block upstream_block = m_upstream.allocate(size_to_alloc, alignof(BlockNode));
             if (!upstream_block.ptr) 
             {
                 return nullptr;
             }
 
-            // Размещаем заголовок узла в самом начале выделенной памяти (placement new)
+            // Place the node header at the start of the allocated memory (placement new)
             BlockNode* node = ::new (upstream_block.ptr) BlockNode{
                 .next = m_head,
                 .capacity = upstream_block.size,
-                .offset = sizeof(BlockNode) // Занято под сам заголовок
+                .offset = sizeof(BlockNode) // Occupied by the header itself
             };
 
-            // Делаем этот блок текущим активным
+            // Make this block the current active one
             m_head = node;
             return node;
         }
@@ -58,17 +58,17 @@ namespace MemCore
         {
         }
 
-        // При уничтожении Арены мы обязаны вернуть ВСЕ чанки обратно в Upstream
+        // When the arena is destroyed, return all blocks back to Upstream
         ~ArenaAllocator() noexcept 
         {
             reset();
         }
 
-        // Запрещаем копирование, чтобы случайно не размножить указатели на одни и те же блоки
+        // Disable copying so we don't accidentally duplicate pointers to the same blocks
         ArenaAllocator(const ArenaAllocator&) = delete;
         ArenaAllocator& operator=(const ArenaAllocator&) = delete;
 
-        // Разрешаем перемещение
+        // Allow moving
         ArenaAllocator(ArenaAllocator&& other) noexcept
             : m_upstream(other.m_upstream), 
               m_default_block_size(other.m_default_block_size), 
@@ -82,7 +82,7 @@ namespace MemCore
             if (size == 0) 
                 return { nullptr, 0 };
 
-            // Если блоков еще нет — создаем первый
+            // If there are no blocks yet, create the first one
             if (!m_head) 
             {
                 if (!allocate_new_block(size)) 
@@ -93,19 +93,19 @@ namespace MemCore
             std::byte* base = reinterpret_cast<std::byte*>(current);
             std::byte* current_ptr = base + current->offset;
 
-            // Вычисляем выравнивание пользовательского указателя
+            // Compute alignment for the user pointer
             void* aligned_ptr = AlignForward(current_ptr, alignment);
             std::byte* payload_ptr = static_cast<std::byte*>(aligned_ptr);
             std::size_t shift = payload_ptr - current_ptr;
 
-            // Если в текущем чанке не хватает места, выделяем новый чанк
+            // If current block lacks space, allocate a new block
             if (current->offset + shift + size > current->capacity) 
             {
                 current = allocate_new_block(size);
                 if (!current) 
                     return { nullptr, 0 };
 
-                // Пересчитываем указатели для нового чанка
+                // Recompute pointers for the new block
                 base = reinterpret_cast<std::byte*>(current);
                 current_ptr = base + current->offset;
                 aligned_ptr = AlignForward(current_ptr, alignment);
@@ -113,15 +113,15 @@ namespace MemCore
                 shift = payload_ptr - current_ptr;
             }
 
-            // Двигаем ползунок текущего чанка вперед
+            // Move the current block cursor forward
             current->offset = (payload_ptr + size) - base;
             return { aligned_ptr, size };
         }
 
-        // Как и линейный аллокатор, Арена игнорирует точечный deallocate
+        // Like the linear allocator, the arena ignores fine-grained deallocation
         void deallocate(void* /*ptr*/, std::size_t /*size*/) noexcept {}
 
-        // Полный сброс: проходим по интрузивному списку и освобождаем все чанки через Upstream
+        // Full reset: traverse the intrusive list and free all blocks through Upstream
         void reset() noexcept 
         {
             BlockNode* current = m_head;

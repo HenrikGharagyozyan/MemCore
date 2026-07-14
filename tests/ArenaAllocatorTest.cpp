@@ -8,26 +8,26 @@ TEST(ArenaAllocatorTest, GrowthAndReset)
 {
     MemCore::MallocUpstream upstream;
     
-    // Создаем арену с крошечным размером блока по умолчанию (64 байта), 
-    // чтобы легко спровоцировать её рост
+    // Create an arena with a tiny default block size (64 bytes), 
+    // to easily force it to grow
     MemCore::ArenaAllocator arena(upstream, 64);
 
-    // 1. Первая аллокация
+    // 1. First allocation
     MemCore::Block a = arena.allocate(32, 8);
     EXPECT_NE(a.ptr, nullptr);
 
-    // 2. Вторая аллокация: 32 байта (А) + размер заголовка интрузивного списка 
-    // уже не влезут в стартовые 64 байта чанка. Арена должна автоматически вырасти!
+    // 2. Second allocation: 32 bytes (A) + intrusive list header size 
+    // will no longer fit in the initial 64-byte block. The arena must grow automatically!
     MemCore::Block b = arena.allocate(40, 8);
     EXPECT_NE(b.ptr, nullptr);
 
-    // Так как блоки лежат в абсолютно разных чанках ОС, их адреса не должны быть смежными
+    // Since the blocks live in different OS blocks, their addresses should not be adjacent
     EXPECT_NE(static_cast<std::byte*>(a.ptr) + 32, static_cast<std::byte*>(b.ptr));
 
-    // 3. Проверяем reset — он должен корректно вернуть всю память без утечек
+    // 3. Check reset — it should correctly return all memory without leaks
     arena.reset();
     
-    // После сброса новая аллокация снова должна отработать штатно
+    // After reset, a new allocation should still work normally
     MemCore::Block c = arena.allocate(16, 8);
     EXPECT_NE(c.ptr, nullptr);
 }
