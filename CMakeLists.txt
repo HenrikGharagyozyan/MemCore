@@ -33,6 +33,7 @@ add_executable(MemCore_UnitTests
     tests/ArenaAllocatorTest.cpp
     tests/PoolAllocatorTest.cpp
     tests/StlAdapterTest.cpp
+    tests/TrackerAllocatorTest.cpp
 )
 
 target_link_libraries(MemCore_UnitTests PRIVATE MemCore GTest::gtest_main)
