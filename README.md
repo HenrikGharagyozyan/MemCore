@@ -1,4 +1,4 @@
-[![CMake Build and Test](https://github.com/YOUR_USERNAME/MemCore/actions/workflows/cmake.yml/badge.svg)](https://github.com/YOUR_USERNAME/MemCore/actions/workflows/cmake.yml)
+[![CMake Build and Test](https://github.com/HenrikGharagyozyan/MemCore/actions/workflows/cmake.yml/badge.svg)](https://github.com/YOUR_USERNAME/MemCore/actions/workflows/cmake.yml)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/compiler_support/20)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
