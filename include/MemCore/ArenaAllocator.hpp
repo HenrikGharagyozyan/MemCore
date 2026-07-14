@@ -137,6 +137,32 @@ namespace MemCore
             }
             m_head = nullptr;
         }
+
+        // Проверяет, принадлежит ли указатель любому из блоков арены
+        bool owns(const void* ptr) const noexcept 
+        {
+            if (!ptr) 
+                return false;
+
+            auto p = reinterpret_cast<std::uintptr_t>(ptr);
+
+            // Проходим по всем выделенным чанкам через связный список
+            BlockNode* current = m_head;
+            while (current) 
+            {
+                auto start = reinterpret_cast<std::uintptr_t>(current);
+                auto end = start + current->capacity;
+                
+                if (p >= start && p < end) 
+                {
+                    return true;
+                }
+                current = current->next;
+            }
+            
+            return false;
+        }
+        
     };
 
 }

@@ -115,6 +115,18 @@ namespace MemCore
         {
             initialize_free_list();
         }
+
+        bool owns(const void* ptr) const noexcept 
+        {
+            if (!ptr) 
+                return false;
+
+            auto p = reinterpret_cast<std::uintptr_t>(ptr);
+            auto start = reinterpret_cast<std::uintptr_t>(m_memory.ptr);
+            auto end = start + m_memory.size;
+            return p >= start && p < end;
+        }
+        
     };
 
     static_assert(Allocator<PoolAllocator>);
