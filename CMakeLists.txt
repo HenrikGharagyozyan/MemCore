@@ -36,6 +36,7 @@ add_executable(MemCore_UnitTests
     tests/StlAdapterTest.cpp
     tests/TrackerAllocatorTest.cpp
     tests/FallbackAllocatorTest.cpp
+    tests/MemoryHelpersTest.cpp
 )
 
 target_link_libraries(MemCore_UnitTests PRIVATE MemCore GTest::gtest_main)
