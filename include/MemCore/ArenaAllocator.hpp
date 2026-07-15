@@ -1,9 +1,11 @@
 #pragma once
 #include "AllocatorConcept.hpp"
 #include "Align.hpp"
+
 #include <cstddef>
 #include <algorithm>
 #include <new>
+
 
 namespace MemCore 
 {
@@ -138,7 +140,7 @@ namespace MemCore
             m_head = nullptr;
         }
 
-        // Проверяет, принадлежит ли указатель любому из блоков арены
+        // Checks whether the pointer belongs to any block in the arena
         bool owns(const void* ptr) const noexcept 
         {
             if (!ptr) 
@@ -146,7 +148,7 @@ namespace MemCore
 
             auto p = reinterpret_cast<std::uintptr_t>(ptr);
 
-            // Проходим по всем выделенным чанкам через связный список
+            // Traverse all allocated chunks through the linked list
             BlockNode* current = m_head;
             while (current) 
             {
