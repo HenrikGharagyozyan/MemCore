@@ -19,10 +19,10 @@ namespace MemCore
 
         Block allocate(std::size_t size, std::size_t alignment) 
         {
-            // 1. Сначала пытаемся выделить память из быстрого основного аллокатора
+            // 1. First, try to allocate memory from the fast primary allocator
             Block block = m_primary->allocate(size, alignment);
             
-            // 2. Если основной не справился (вернул nullptr), просим у запасного
+            // 2. If the primary allocator failed (returned nullptr), ask the fallback allocator
             if (!block.ptr) 
             {
                 block = m_fallback->allocate(size, alignment);
@@ -36,19 +36,19 @@ namespace MemCore
             if (!ptr) 
                 return;
 
-            // Спрашиваем основной аллокатор: "Это твой указатель?"
+            // Ask the primary allocator whether this pointer belongs to it
             if (m_primary->owns(ptr)) 
             {
                 m_primary->deallocate(ptr, size);
             } 
             else 
             {
-                // Если не его, значит память выделял запасной
+                // If not, then the fallback allocator allocated the memory
                 m_fallback->deallocate(ptr, size);
             }
         }
 
-        // Поддержка цепочек Fallback-аллокаторов
+        // Support for chains of fallback allocators
         bool owns(const void* ptr) const noexcept 
         {
             return m_primary->owns(ptr) || m_fallback->owns(ptr);
