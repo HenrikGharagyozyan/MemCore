@@ -37,7 +37,11 @@ add_executable(MemCore_UnitTests
     tests/TrackerAllocatorTest.cpp
     tests/FallbackAllocatorTest.cpp
     tests/MemoryHelpersTest.cpp
+    tests/ThreadSafeAllocatorTest.cpp
 )
+
+find_package(Threads REQUIRED)
+target_link_libraries(MemCore_UnitTests PRIVATE Threads::Threads)
 
 target_link_libraries(MemCore_UnitTests PRIVATE MemCore GTest::gtest_main)
 

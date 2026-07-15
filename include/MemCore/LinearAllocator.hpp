@@ -54,7 +54,7 @@ namespace MemCore
             m_offset = 0;
         }
 
-        // Проверяет, принадлежит ли указатель этому аллокатору
+        // Checks whether the pointer belongs to this allocator
         bool owns(const void* ptr) const noexcept 
         {
             if (!ptr) 
