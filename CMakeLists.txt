@@ -5,9 +5,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(MemCore INTERFACE)
+add_library(MemCore STATIC
+    src/VirtualUpstream.cpp
+)
 
-target_include_directories(MemCore INTERFACE 
+target_include_directories(MemCore PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
@@ -40,6 +42,7 @@ add_executable(MemCore_UnitTests
     tests/ThreadSafeAllocatorTest.cpp
     tests/ClassAllocatorTest.cpp
     tests/CanaryAllocatorTest.cpp
+    tests/VirtualUpstreamTest.cpp 
 )
 
 find_package(Threads REQUIRED)
