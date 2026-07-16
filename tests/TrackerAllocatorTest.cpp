@@ -1,47 +1,52 @@
 #include <gtest/gtest.h>
 
 #include <MemCore/TrackerAllocator.hpp>
-#include <MemCore/LinearAllocator.hpp>
 #include <MemCore/MallocUpstream.hpp>
 
 
-TEST(TrackerAllocatorTest, TracksAllocationsAndPeak) 
+TEST(TrackerAllocatorTest, TracksCategoriesSeparately) 
 {
-    MemCore::MallocUpstream upstream;
-    MemCore::Block chunk = upstream.allocate(1024, 8);
+    MemCore::MallocUpstream malloc_up;
+    MemCore::TrackerAllocator<MemCore::MallocUpstream> tracker(malloc_up);
+
+    // 1. Allocation without a tag (it will go to Unknown)
+    MemCore::Block b_unk = tracker.allocate(100, 8);
+    EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Unknown), 100);
 
     {
-        MemCore::LinearAllocator linear(chunk);
+        // 2. Simulate the work of the engine's graphics subsystem
+        MemCore::TagScope graphics_zone(MemCore::MemoryTag::Graphics);
         
-        // Wrap the linear allocator with the tracker
-        MemCore::TrackerAllocator<MemCore::LinearAllocator> tracker(linear);
-
-        EXPECT_EQ(tracker.get_current_usage(), 0);
-        EXPECT_EQ(tracker.get_peak_usage(), 0);
-
-        // Allocate 100 bytes
-        MemCore::Block a = tracker.allocate(100, 8);
-        EXPECT_EQ(tracker.get_current_usage(), 100);
-        EXPECT_EQ(tracker.get_peak_usage(), 100);
-        EXPECT_EQ(tracker.get_allocation_count(), 1);
-
-        // Allocate another 50 bytes
-        MemCore::Block b = tracker.allocate(50, 8);
-        EXPECT_EQ(tracker.get_current_usage(), 150);
-        EXPECT_EQ(tracker.get_peak_usage(), 150);
-        EXPECT_EQ(tracker.get_allocation_count(), 2);
-
-        // Simulate deallocation (Linear itself does not free, but the tracker updates its counters)
-        tracker.deallocate(b.ptr, b.size);
+        MemCore::Block b_gfx1 = tracker.allocate(250, 8);
+        MemCore::Block b_gfx2 = tracker.allocate(150, 8);
         
-        // Current usage dropped, but peak stayed at 150!
-        EXPECT_EQ(tracker.get_current_usage(), 100); 
-        EXPECT_EQ(tracker.get_peak_usage(), 150);    
-        EXPECT_EQ(tracker.get_deallocation_count(), 1);
+        EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Graphics), 400);
+        EXPECT_EQ(tracker.get_peak(MemCore::MemoryTag::Graphics), 400);
+
+        {
+            // Nested scope: for example, a sound effect is triggered inside rendering
+            MemCore::TagScope audio_zone(MemCore::MemoryTag::Audio);
+            MemCore::Block b_audio = tracker.allocate(50, 8);
+            
+            EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Audio), 50);
+            // Graphics did not change in this case
+            EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Graphics), 400);
+            
+            tracker.deallocate(b_audio.ptr, b_audio.size);
+        }
         
-        // Print statistics to the console for inspection
-        tracker.print_stats();
+        // Release part of the graphics allocation
+        tracker.deallocate(b_gfx1.ptr, b_gfx1.size);
+        EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Graphics), 150);
+        EXPECT_EQ(tracker.get_peak(MemCore::MemoryTag::Graphics), 400); // The peak remembers the maximum!
+        
+        tracker.deallocate(b_gfx2.ptr, b_gfx2.size);
     }
 
-    upstream.deallocate(chunk.ptr, chunk.size);
+    tracker.deallocate(b_unk.ptr, b_unk.size);
+    
+    // At the end everything should be back to zero
+    EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Unknown), 0);
+    EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Graphics), 0);
+    EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Audio), 0);
 }
