@@ -6,11 +6,11 @@
 
 
 /**
- * @brief Макрос для внедрения кастомного аллокатора прямо в класс.
- * Размещать строго в `public:` секции класса.
+ * @brief Macro for injecting a custom allocator directly into a class.
+ * Place it strictly in the `public:` section of the class.
  * 
- * @param Type Тип самого класса (например, Bullet).
- * @param AllocatorInstance Выражение, возвращающее ссылку на аллокатор (например, GetPool()).
+ * @param Type The class type itself (for example, Bullet).
+ * @param AllocatorInstance An expression that returns a reference to the allocator (for example, GetPool()).
  */
 #define MEMCORE_ENABLE_CLASS_ALLOCATOR(Type, AllocatorInstance) \
     static void* operator new(std::size_t size) \

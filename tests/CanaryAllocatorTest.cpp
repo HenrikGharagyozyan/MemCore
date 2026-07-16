@@ -12,10 +12,10 @@ TEST(CanaryAllocatorTest, NormalUseDoesNotCrash)
     MemCore::Block b = canary.allocate(10, 8);
     ASSERT_NE(b.ptr, nullptr);
     
-    // Записываем ровно 10 байт. Всё легально.
+    // Write exactly 10 bytes. This is legal.
     std::memset(b.ptr, 0xAA, 10);
     
-    // Должно пройти успешно, без крашей
+    // This should succeed without crashing
     canary.deallocate(b.ptr, b.size);
 }
 
@@ -24,13 +24,13 @@ TEST(CanaryAllocatorTest, DetectsBufferOverflow)
     MemCore::MallocUpstream malloc_up;
     MemCore::CanaryAllocator<MemCore::MallocUpstream> canary(malloc_up);
 
-    // Ожидаем, что код внутри ASSERT_DEATH убьет программу с сообщением "Back Canary corrupted"
+    // Expect the code inside ASSERT_DEATH to terminate the program with the message "Back Canary corrupted"
     ASSERT_DEATH(
         {
             MemCore::Block b = canary.allocate(10, 8);
             
-            // НАМЕРЕННЫЙ БАГ: Записываем 11 байт в массив размером 10!
-            // Это затрет один байт задней канарейки.
+            // INTENTIONAL BUG: Write 11 bytes to an array of size 10!
+            // This will overwrite one byte of the back canary.
             std::memset(b.ptr, 0xAA, 11);
             
             canary.deallocate(b.ptr, b.size);
@@ -42,12 +42,12 @@ TEST(CanaryAllocatorTest, DetectsBufferUnderflow)
     MemCore::MallocUpstream malloc_up;
     MemCore::CanaryAllocator<MemCore::MallocUpstream> canary(malloc_up);
 
-    // Ожидаем смерть от "Front Canary corrupted"
+    // Expect termination with "Front Canary corrupted"
     ASSERT_DEATH(
         {
             MemCore::Block b = canary.allocate(10, 8);
             
-            // НАМЕРЕННЫЙ БАГ: Пишем по отрицательному индексу (до начала массива)
+            // INTENTIONAL BUG: Write via a negative index (before the start of the array)
             std::byte* payload = static_cast<std::byte*>(b.ptr);
             payload[-1] = std::byte{0xFF};
             

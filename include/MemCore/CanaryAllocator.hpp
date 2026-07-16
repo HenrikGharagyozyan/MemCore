@@ -17,18 +17,18 @@ namespace MemCore
     private:
         Allocator& m_allocator;
 
-        // Канарейки (Магические числа)
+        // Canary values (magic numbers)
         static constexpr std::uint32_t FRONT_MAGIC = 0xDEADBEEF;
         static constexpr std::uint32_t BACK_MAGIC  = 0xBAADF00D;
 
-        // Выравниваем заголовок на 16 байт. Это нужно, чтобы пользовательские 
-        // данные, идущие сразу за ним, сохранили правильное выравнивание.
+        // Align the header to 16 bytes. This ensures that the user data that follows it
+        // keeps the correct alignment.
         struct alignas(16) Header 
         {
             std::size_t user_size;
 
-            // Явно заполняем пустоту, чтобы magic всегда был в самом конце заголовка.
-            // На 64-битных системах это будет 4 байта, на 32-битных — 8 байт.
+            // Explicitly fill the padding so that magic is always at the end of the header.
+            // On 64-bit systems this will be 4 bytes; on 32-bit systems it will be 8 bytes.
             std::byte padding[16 - sizeof(std::size_t) - sizeof(std::uint32_t)]; // Padding to ensure alignment
 
             std::uint32_t magic;
@@ -42,27 +42,27 @@ namespace MemCore
 
         Block allocate(std::size_t size, std::size_t alignment) 
         {
-            // Просим память под: Заголовок + Данные + Задняя канарейка
+            // Request memory for: Header + Data + Back Canary
             std::size_t total_size = sizeof(Header) + size + sizeof(std::uint32_t);
             
-            // Гарантируем, что базовый аллокатор выровняет хотя бы по границе заголовка
+            // Ensure the underlying allocator aligns at least to the header boundary
             std::size_t actual_align = (alignment > alignof(Header)) ? alignment : alignof(Header);
 
             Block block = m_allocator.allocate(total_size, actual_align);
             if (!block.ptr) 
                 return { nullptr, 0 };
 
-            // 1. Ставим Front Canary
+            // 1. Place the front canary
             Header* header = static_cast<Header*>(block.ptr);
             header->user_size = size;
             header->magic = FRONT_MAGIC;
 
-            // 2. Вычисляем начало пользовательских данных
+            // 2. Compute the start of the user data
             std::byte* payload = reinterpret_cast<std::byte*>(block.ptr) + sizeof(Header);
 
-            // 3. Ставим Back Canary в самом конце.
-            // Используем memcpy вместо прямого каста, чтобы избежать 
-            // краша на ARM процессорах при невыровненном доступе к памяти!
+            // 3. Place the back canary at the very end.
+            // Use memcpy instead of a direct cast to avoid crashes on ARM processors
+            // when accessing unaligned memory.
             std::memcpy(payload + size, &BACK_MAGIC, sizeof(BACK_MAGIC));
 
             return { payload, size };
@@ -76,24 +76,24 @@ namespace MemCore
             std::byte* payload = static_cast<std::byte*>(ptr);
             Header* header = reinterpret_cast<Header*>(payload - sizeof(Header));
 
-            // Проверка 1: Front Canary (Защита от записи до массива)
+            // Check 1: Front Canary (protection against writes before the array)
             if (header->magic != FRONT_MAGIC) 
             {
                 std::cerr << "[MemCore FATAL] Front Canary corrupted! Buffer Underflow at " << ptr << "\n";
-                std::abort(); // Мгновенно убиваем программу!
+                std::abort(); // Terminate the program immediately!
             }
 
-            // Проверка 2: Back Canary (Защита от переполнения массива)
+            // Check 2: Back Canary (protection against buffer overflow)
             std::uint32_t back_magic;
             std::memcpy(&back_magic, payload + header->user_size, sizeof(BACK_MAGIC));
 
             if (back_magic != BACK_MAGIC) 
             {
                 std::cerr << "[MemCore FATAL] Back Canary corrupted! Buffer Overflow at " << ptr << "\n";
-                std::abort(); // Мгновенно убиваем программу!
+                std::abort(); // Terminate the program immediately!
             }
 
-            // Если всё чисто — возвращаем память реальному аллокатору
+            // If everything is intact, return the memory to the underlying allocator
             std::size_t total_size = sizeof(Header) + header->user_size + sizeof(std::uint32_t);
             m_allocator.deallocate(header, total_size);
         }
