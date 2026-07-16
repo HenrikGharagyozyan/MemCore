@@ -38,6 +38,7 @@ add_executable(MemCore_UnitTests
     tests/FallbackAllocatorTest.cpp
     tests/MemoryHelpersTest.cpp
     tests/ThreadSafeAllocatorTest.cpp
+    tests/ClassAllocatorTest.cpp
 )
 
 find_package(Threads REQUIRED)
