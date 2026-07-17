@@ -64,7 +64,7 @@ namespace MemCore
         /**
          * @brief Delegates allocator reset if supported.
          */
-        void reset() 
+        void reset() requires requires(Allocator a) { a.reset(); }
         {
             std::lock_guard<Mutex> lock(m_mutex);
             // reset() exists for Stack, Linear, and Arena, but not for Malloc/Pool in the current design.

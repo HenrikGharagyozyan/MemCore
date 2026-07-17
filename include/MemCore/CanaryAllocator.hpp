@@ -1,18 +1,20 @@
 #pragma once
 
 #include "AllocatorConcept.hpp"
+#include "Align.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <cstdlib>
+#include <algorithm>
 #include <iostream>
 
 
-namespace MemCore 
+namespace MemCore
 {
 
     template <typename Allocator>
-    class CanaryAllocator 
+    class CanaryAllocator
     {
     private:
         Allocator& m_allocator;
@@ -21,63 +23,74 @@ namespace MemCore
         static constexpr std::uint32_t FRONT_MAGIC = 0xDEADBEEF;
         static constexpr std::uint32_t BACK_MAGIC  = 0xBAADF00D;
 
-        // Align the header to 16 bytes. This ensures that the user data that follows it
-        // keeps the correct alignment.
-        struct alignas(16) Header 
+        // Bookkeeping written immediately before the user payload.
+        //
+        // The payload is aligned by shifting it FORWARD from the upstream base,
+        // so the header no longer needs an over-alignment of its own. We only
+        // require that `magic` remains the LAST member (with no trailing
+        // padding) so it sits directly before the payload and a one-byte
+        // underflow corrupts it.
+        struct Header
         {
-            std::size_t user_size;
-
-            // Explicitly fill the padding so that magic is always at the end of the header.
-            // On 64-bit systems this will be 4 bytes; on 32-bit systems it will be 8 bytes.
-            std::byte padding[16 - sizeof(std::size_t) - sizeof(std::uint32_t)]; // Padding to ensure alignment
-
-            std::uint32_t magic;
+            std::size_t user_size;     // payload size the caller asked for
+            std::uint32_t base_offset; // bytes from the upstream base ptr to the payload
+            std::uint32_t magic;       // FRONT canary — MUST stay the last member
         };
+
+        static_assert(offsetof(Header, magic) + sizeof(std::uint32_t) == sizeof(Header),
+            "magic must be the last bytes of Header so it sits immediately before the payload");
 
     public:
         explicit CanaryAllocator(Allocator& allocator) noexcept
-            : m_allocator(allocator) 
+            : m_allocator(allocator)
         {
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) 
+        Block allocate(std::size_t size, std::size_t alignment)
         {
-            // Request memory for: Header + Data + Back Canary
-            std::size_t total_size = sizeof(Header) + size + sizeof(std::uint32_t);
-            
-            // Ensure the underlying allocator aligns at least to the header boundary
-            std::size_t actual_align = (alignment > alignof(Header)) ? alignment : alignof(Header);
-
-            Block block = m_allocator.allocate(total_size, actual_align);
-            if (!block.ptr) 
+            if (size == 0)
                 return { nullptr, 0 };
 
-            // 1. Place the front canary
-            Header* header = static_cast<Header*>(block.ptr);
+            // The upstream base must be aligned at least for the Header AND for
+            // the caller's request, so the payload can be aligned by shifting.
+            std::size_t actual_align = std::max(alignment, alignof(Header));
+
+            // Reserve a whole number of aligned slots for the header. Because
+            // the base is aligned to actual_align and header_space is a multiple
+            // of it, base + header_space is guaranteed to be aligned too.
+            std::size_t header_space = AlignUp(sizeof(Header), actual_align);
+            std::size_t total_size = header_space + size + sizeof(std::uint32_t);
+
+            Block block = m_allocator.allocate(total_size, actual_align);
+            if (!block.ptr)
+                return { nullptr, 0 };
+
+            std::byte* base = static_cast<std::byte*>(block.ptr);
+            std::byte* payload = base + header_space; // aligned to actual_align
+
+            // The header lives directly before the (aligned) payload.
+            Header* header = reinterpret_cast<Header*>(payload - sizeof(Header));
             header->user_size = size;
+            header->base_offset = static_cast<std::uint32_t>(header_space);
             header->magic = FRONT_MAGIC;
 
-            // 2. Compute the start of the user data
-            std::byte* payload = reinterpret_cast<std::byte*>(block.ptr) + sizeof(Header);
-
-            // 3. Place the back canary at the very end.
-            // Use memcpy instead of a direct cast to avoid crashes on ARM processors
-            // when accessing unaligned memory.
+            // Place the back canary just past the user data.
+            // Use memcpy to stay safe on architectures that fault on unaligned access.
             std::memcpy(payload + size, &BACK_MAGIC, sizeof(BACK_MAGIC));
 
             return { payload, size };
         }
 
-        void deallocate(void* ptr, std::size_t size) 
+        void deallocate(void* ptr, std::size_t /*size*/)
         {
-            if (!ptr) 
+            if (!ptr)
                 return;
 
             std::byte* payload = static_cast<std::byte*>(ptr);
             Header* header = reinterpret_cast<Header*>(payload - sizeof(Header));
 
             // Check 1: Front Canary (protection against writes before the array)
-            if (header->magic != FRONT_MAGIC) 
+            if (header->magic != FRONT_MAGIC)
             {
                 std::cerr << "[MemCore FATAL] Front Canary corrupted! Buffer Underflow at " << ptr << "\n";
                 std::abort(); // Terminate the program immediately!
@@ -87,25 +100,27 @@ namespace MemCore
             std::uint32_t back_magic;
             std::memcpy(&back_magic, payload + header->user_size, sizeof(BACK_MAGIC));
 
-            if (back_magic != BACK_MAGIC) 
+            if (back_magic != BACK_MAGIC)
             {
                 std::cerr << "[MemCore FATAL] Back Canary corrupted! Buffer Overflow at " << ptr << "\n";
                 std::abort(); // Terminate the program immediately!
             }
 
-            // If everything is intact, return the memory to the underlying allocator
-            std::size_t total_size = sizeof(Header) + header->user_size + sizeof(std::uint32_t);
-            m_allocator.deallocate(header, total_size);
+            // Recover the original upstream pointer via the stored offset.
+            std::byte* base = payload - header->base_offset;
+            std::size_t total_size = header->base_offset + header->user_size + sizeof(std::uint32_t);
+            m_allocator.deallocate(base, total_size);
         }
-        
-        bool owns(const void* ptr) const noexcept 
+
+        bool owns(const void* ptr) const noexcept
         {
-            if (!ptr) 
+            if (!ptr)
                 return false;
 
             const std::byte* payload = static_cast<const std::byte*>(ptr);
             const Header* header = reinterpret_cast<const Header*>(payload - sizeof(Header));
-            return m_allocator.owns(header);
+            const std::byte* base = payload - header->base_offset;
+            return m_allocator.owns(base);
         }
     };
 

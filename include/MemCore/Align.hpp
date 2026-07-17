@@ -18,8 +18,17 @@ namespace MemCore
         return (address & (alignment - 1)) == 0;
     }
 
+    // Rounds a SIZE up to the nearest multiple of alignment (a power of two).
+    // Useful for reserving a whole number of aligned slots (e.g. header space).
+    inline std::size_t AlignUp(std::size_t size, std::size_t alignment) noexcept
+    {
+        assert(std::has_single_bit(alignment) && "Alignment must be a power of two");
+
+        return (size + alignment - 1) & ~(alignment - 1);
+    }
+
     // Moves the pointer FORWARD to the nearest aligned address
-    inline void* AlignForward(void* ptr, std::size_t alignment) noexcept 
+    inline void* AlignForward(void* ptr, std::size_t alignment) noexcept
     {
         assert(std::has_single_bit(alignment) && "Alignment must be a power of two");
 
