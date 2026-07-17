@@ -2,9 +2,10 @@
 
 #include <MemCore/CanaryAllocator.hpp>
 #include <MemCore/MallocUpstream.hpp>
+#include <MemCore/Align.hpp>
 
 
-TEST(CanaryAllocatorTest, NormalUseDoesNotCrash) 
+TEST(CanaryAllocatorTest, NormalUseDoesNotCrash)
 {
     MemCore::MallocUpstream malloc_up;
     MemCore::CanaryAllocator<MemCore::MallocUpstream> canary(malloc_up);
@@ -19,7 +20,23 @@ TEST(CanaryAllocatorTest, NormalUseDoesNotCrash)
     canary.deallocate(b.ptr, b.size);
 }
 
-TEST(CanaryAllocatorTest, DetectsBufferOverflow) 
+TEST(CanaryAllocatorTest, OverAlignedPayloadIsAligned)
+{
+    MemCore::MallocUpstream malloc_up;
+    MemCore::CanaryAllocator<MemCore::MallocUpstream> canary(malloc_up);
+
+    constexpr std::size_t kAlign = 64;
+    MemCore::Block b = canary.allocate(100, kAlign);
+
+    ASSERT_NE(b.ptr, nullptr);
+    EXPECT_TRUE(MemCore::IsAligned(b.ptr, kAlign));
+
+    // Fill exactly the requested size; both canaries must survive.
+    std::memset(b.ptr, 0xAA, 100);
+    canary.deallocate(b.ptr, b.size);
+}
+
+TEST(CanaryAllocatorTest, DetectsBufferOverflow)
 {
     MemCore::MallocUpstream malloc_up;
     MemCore::CanaryAllocator<MemCore::MallocUpstream> canary(malloc_up);
