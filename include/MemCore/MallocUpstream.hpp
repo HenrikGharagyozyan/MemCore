@@ -1,42 +1,87 @@
 #pragma once
 #include "AllocatorConcept.hpp"
-#include <cstdlib> // For std::aligned_alloc and std::free
-#include <new>     // For std::bad_alloc (if we want to throw it, but we return nullptr)
+#include "Align.hpp"
 
-namespace MemCore 
+#include <cstddef>
+#include <cstdlib>   // std::free, posix_memalign (POSIX)
+#include <algorithm> // std::max
+#include <bit>       // std::has_single_bit
+#include <cassert>
+
+#if defined(_WIN32)
+    #include <malloc.h> // _aligned_malloc / _aligned_free
+#endif
+
+namespace MemCore
 {
 
     // The most basic allocator, which requests memory directly from the OS.
-    // It acts as an upstream source for our future fast allocators.
-    class MallocUpstream 
+    // It acts as an upstream source for our faster, specialized allocators.
+    class MallocUpstream
     {
-    public:
-        // Allocate memory while taking alignment into account
-        Block allocate(std::size_t size, std::size_t alignment) noexcept 
+    private:
+        // Platform-matched aligned allocation.
+        // The free path MUST mirror this: on Windows a pointer from
+        // _aligned_malloc cannot be released with std::free (heap corruption),
+        // so allocate() and deallocate() both route through this pair.
+        static void* raw_aligned_alloc(std::size_t size, std::size_t alignment) noexcept
         {
-            // For std::aligned_alloc, the size must be a multiple of the alignment.
-            // Round the size up.
-            std::size_t remainder = size % alignment;
-            std::size_t aligned_size = (remainder == 0) ? size : (size + alignment - remainder);
-
-            void* ptr = std::aligned_alloc(alignment, aligned_size);
-            
-            return { ptr, aligned_size };
+#if defined(_WIN32)
+            // NOTE: MSVC's argument order is (size, alignment) — reversed vs POSIX.
+            return _aligned_malloc(size, alignment);
+#else
+            void* ptr = nullptr;
+            // posix_memalign returns an errno-style code, not the pointer.
+            if (::posix_memalign(&ptr, alignment, size) != 0)
+                return nullptr;
+            return ptr;
+#endif
         }
 
-        void deallocate(void* ptr, std::size_t /*size*/) noexcept 
+        static void raw_aligned_free(void* ptr) noexcept
         {
+#if defined(_WIN32)
+            _aligned_free(ptr);
+#else
             std::free(ptr);
+#endif
         }
 
-        // For a system allocator, it is not possible to free all memory at once, so this method is empty.
-        void reset() noexcept 
+    public:
+        // Allocate memory honoring the requested alignment.
+        Block allocate(std::size_t size, std::size_t alignment) noexcept
+        {
+            if (size == 0)
+                return { nullptr, 0 };
+
+            // posix_memalign requires alignment to be a power of two AND a
+            // multiple of sizeof(void*). Floor it to the platform minimum so
+            // small requests (e.g. alignof(int) == 4) stay legal. Over-aligning
+            // is always safe.
+            alignment = std::max(alignment, alignof(std::max_align_t));
+            assert(std::has_single_bit(alignment) && "Alignment must be a power of two");
+
+            void* ptr = raw_aligned_alloc(size, alignment);
+            if (!ptr)
+                return { nullptr, 0 };
+
+            return { ptr, size };
+        }
+
+        void deallocate(void* ptr, std::size_t /*size*/) noexcept
+        {
+            raw_aligned_free(ptr);
+        }
+
+        // A system allocator cannot free everything at once, so reset is a no-op.
+        void reset() noexcept
         {
             // No-op
         }
     };
 
     // Strict check: if we break the AllocatorConcept interface somewhere,
+    // this fails to compile.
     static_assert(Allocator<MallocUpstream>);
 
 }

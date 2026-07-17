@@ -29,8 +29,9 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 # List EVERY test file here
-add_executable(MemCore_UnitTests 
+add_executable(MemCore_UnitTests
     tests/AlignTest.cpp
+    tests/MallocUpstreamTest.cpp
     tests/LinearAllocatorTest.cpp
     tests/StackAllocatorTest.cpp
     tests/ArenaAllocatorTest.cpp
