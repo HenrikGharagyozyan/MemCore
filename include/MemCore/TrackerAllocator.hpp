@@ -1,6 +1,7 @@
 #pragma once
 #include "AllocatorConcept.hpp"
 #include "MemoryTags.hpp"
+#include "Align.hpp"
 
 #include <cstddef>
 #include <algorithm>
@@ -17,11 +18,15 @@ namespace MemCore
     private:
         UpstreamAllocator* m_upstream;
 
-        // Hidden header that stores the size and tag so deallocate knows what to subtract from
-        struct alignas(16) Header 
+        // Hidden header that stores the size and tag so deallocate knows what to
+        // subtract from. The payload is aligned by shifting it forward from the
+        // upstream base, so the header no longer needs an over-alignment of its
+        // own; base_offset lets deallocate recover the original upstream pointer.
+        struct Header
         {
             std::size_t size;
             MemoryTag tag;
+            std::size_t base_offset; // bytes from the upstream base ptr to the payload
         };
 
         // Atomic arrays for tracking statistics separately by tag
@@ -43,20 +48,29 @@ namespace MemCore
             // print_stats(); 
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) 
+        Block allocate(std::size_t size, std::size_t alignment)
         {
-            // Increase the size by the header size
-            std::size_t total_size = sizeof(Header) + size;
-            std::size_t actual_align = (alignment > alignof(Header)) ? alignment : alignof(Header);
+            // The upstream base must be aligned for the Header AND the caller's
+            // request; the payload is then aligned by shifting forward.
+            std::size_t actual_align = std::max(alignment, alignof(Header));
+
+            // Reserve a whole number of aligned slots for the header, so
+            // base + header_space is guaranteed to stay aligned.
+            std::size_t header_space = AlignUp(sizeof(Header), actual_align);
+            std::size_t total_size = header_space + size;
 
             Block block = m_upstream->allocate(total_size, actual_align);
-            if (!block.ptr) 
+            if (!block.ptr)
                 return { nullptr, 0 };
 
-            // Write metadata before the user pointer
-            Header* header = static_cast<Header*>(block.ptr);
+            std::byte* base = static_cast<std::byte*>(block.ptr);
+            std::byte* payload = base + header_space; // aligned to actual_align
+
+            // Write metadata directly before the (aligned) payload
+            Header* header = reinterpret_cast<Header*>(payload - sizeof(Header));
             header->size = size;
             header->tag = g_current_tag; // Take the current thread tag from MemoryTags.hpp
+            header->base_offset = header_space;
 
             // Update metrics for the specific tag
             std::size_t tag_idx = static_cast<std::size_t>(g_current_tag);
@@ -68,8 +82,6 @@ namespace MemCore
 
             m_total_allocations.fetch_add(1, std::memory_order_relaxed);
 
-            // Return a pointer to the data after the header
-            std::byte* payload = reinterpret_cast<std::byte*>(block.ptr) + sizeof(Header);
             return { payload, size };
         }
 
@@ -85,12 +97,13 @@ namespace MemCore
             // Read the tag and subtract the size from the appropriate category
             std::size_t tag_idx = static_cast<std::size_t>(header->tag);
             m_allocated_per_tag[tag_idx].fetch_sub(header->size);
-            
+
             m_total_deallocations.fetch_add(1, std::memory_order_relaxed);
 
-            // Pass the original pointer to the upstream allocator
-            std::size_t total_size = sizeof(Header) + header->size;
-            m_upstream->deallocate(header, total_size);
+            // Recover the original upstream pointer via the stored offset
+            std::byte* base = payload - header->base_offset;
+            std::size_t total_size = header->base_offset + header->size;
+            m_upstream->deallocate(base, total_size);
         }
 
         [[nodiscard]] std::size_t get_allocated(MemoryTag tag) const noexcept 
@@ -110,7 +123,8 @@ namespace MemCore
 
             const std::byte* payload = static_cast<const std::byte*>(ptr);
             const Header* header = reinterpret_cast<const Header*>(payload - sizeof(Header));
-            return m_upstream->owns(header); // Check the original pointer
+            const std::byte* base = payload - header->base_offset;
+            return m_upstream->owns(base); // Check the original upstream pointer
         }
 
         // Updated professional statistics with categories

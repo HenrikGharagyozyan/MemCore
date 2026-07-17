@@ -2,9 +2,33 @@
 
 #include <MemCore/TrackerAllocator.hpp>
 #include <MemCore/MallocUpstream.hpp>
+#include <MemCore/Align.hpp>
+
+#include <cstring>
 
 
-TEST(TrackerAllocatorTest, TracksCategoriesSeparately) 
+// The A3 fix: over-aligned requests must return a correctly aligned payload,
+// and the stats must still balance back to zero after deallocation.
+TEST(TrackerAllocatorTest, OverAlignedPayloadIsAligned)
+{
+    MemCore::MallocUpstream malloc_up;
+    MemCore::TrackerAllocator<MemCore::MallocUpstream> tracker(malloc_up);
+
+    constexpr std::size_t kAlign = 64;
+    MemCore::Block b = tracker.allocate(100, kAlign);
+
+    ASSERT_NE(b.ptr, nullptr);
+    EXPECT_TRUE(MemCore::IsAligned(b.ptr, kAlign));
+    EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Unknown), 100u);
+
+    // Writing the full payload must not disturb the hidden header behind it.
+    std::memset(b.ptr, 0xAA, 100);
+
+    tracker.deallocate(b.ptr, b.size);
+    EXPECT_EQ(tracker.get_allocated(MemCore::MemoryTag::Unknown), 0u);
+}
+
+TEST(TrackerAllocatorTest, TracksCategoriesSeparately)
 {
     MemCore::MallocUpstream malloc_up;
     MemCore::TrackerAllocator<MemCore::MallocUpstream> tracker(malloc_up);
