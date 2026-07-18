@@ -13,11 +13,11 @@
 namespace MemCore
 {
 
-    template <typename Allocator>
+    template <Allocator Alloc>
     class CanaryAllocator
     {
     private:
-        Allocator& m_allocator;
+        Alloc& m_allocator;
 
         // Canary values (magic numbers)
         static constexpr std::uint32_t FRONT_MAGIC = 0xDEADBEEF;
@@ -41,7 +41,7 @@ namespace MemCore
             "magic must be the last bytes of Header so it sits immediately before the payload");
 
     public:
-        explicit CanaryAllocator(Allocator& allocator) noexcept
+        explicit CanaryAllocator(Alloc& allocator) noexcept
             : m_allocator(allocator)
         {
         }
@@ -114,7 +114,10 @@ namespace MemCore
             m_allocator.deallocate(base, total_size);
         }
 
+        // Only exposed when the wrapped layer can answer ownership, so a
+        // Canary over a non-owning allocator does not falsely model OwningAllocator.
         bool owns(const void* ptr) const noexcept
+            requires OwningAllocator<Alloc>
         {
             if (!ptr)
                 return false;

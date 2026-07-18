@@ -17,8 +17,8 @@ namespace MemCore
      * @param args Arguments for the constructor of T.
      * @return T* Pointer to the created object or nullptr if memory is unavailable.
      */
-    template <typename T, typename Allocator, typename... Args>
-    [[nodiscard]] T* New(Allocator& allocator, Args&&... args) 
+    template <typename T, Allocator Alloc, typename... Args>
+    [[nodiscard]] T* New(Alloc& allocator, Args&&... args)
     {
         // 1. Allocate raw memory (accounting for the size and alignment of T)
         Block block = allocator.allocate(sizeof(T), alignof(T));
@@ -41,8 +41,8 @@ namespace MemCore
      * @param allocator A reference to the allocator.
      * @param ptr Pointer to the object to delete.
      */
-    template <typename T, typename Allocator>
-    void Delete(Allocator& allocator, T* ptr) noexcept 
+    template <typename T, Allocator Alloc>
+    void Delete(Alloc& allocator, T* ptr) noexcept
     {
         if (!ptr) 
         {

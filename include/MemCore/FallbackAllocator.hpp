@@ -4,8 +4,11 @@
 namespace MemCore 
 {
 
-    template <typename PrimaryAllocator, typename FallbackAllocatorT>
-    class FallbackAllocator 
+    // The primary MUST be owning: deallocate() routes a pointer by asking the
+    // primary whether it owns it. The fallback only needs to allocate/free, so a
+    // non-owning source like MallocUpstream is valid there (and only there).
+    template <OwningAllocator PrimaryAllocator, Allocator FallbackAllocatorT>
+    class FallbackAllocator
     {
     private:
         PrimaryAllocator* m_primary;
@@ -48,8 +51,11 @@ namespace MemCore
             }
         }
 
-        // Support for chains of fallback allocators
-        bool owns(const void* ptr) const noexcept 
+        // Support for chains of fallback allocators. Only available when the
+        // fallback leg is also owning (the primary always is, by constraint),
+        // so this composite only models OwningAllocator when both legs do.
+        bool owns(const void* ptr) const noexcept
+            requires OwningAllocator<FallbackAllocatorT>
         {
             return m_primary->owns(ptr) || m_fallback->owns(ptr);
         }

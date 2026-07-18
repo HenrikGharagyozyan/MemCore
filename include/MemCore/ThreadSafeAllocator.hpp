@@ -13,16 +13,16 @@ namespace MemCore
      * @tparam Mutex The mutex type (std::mutex by default).
      *               A SpinLock can be passed for higher performance.
      */
-    template <typename Allocator, typename Mutex = std::mutex>
-    class ThreadSafeAllocator 
+    template <Allocator Alloc, typename Mutex = std::mutex>
+    class ThreadSafeAllocator
     {
     private:
-        Allocator& m_allocator; // Reference to the underlying allocator
-        mutable Mutex m_mutex;  // Mutex protecting access (mutable so it can be locked in const methods)
+        Alloc& m_allocator;    // Reference to the underlying allocator
+        mutable Mutex m_mutex; // Mutex protecting access (mutable so it can be locked in const methods)
 
     public:
         // Constructor takes a reference to an existing allocator
-        explicit ThreadSafeAllocator(Allocator& allocator) noexcept
+        explicit ThreadSafeAllocator(Alloc& allocator) noexcept
             : m_allocator(allocator) 
         {
         }
@@ -52,19 +52,17 @@ namespace MemCore
         /**
          * @brief Delegates ownership checks if the underlying allocator supports them.
          */
-        bool owns(const void* ptr) const 
+        bool owns(const void* ptr) const
+            requires OwningAllocator<Alloc>
         {
             std::lock_guard<Mutex> lock(m_mutex);
-            // If the underlying allocator has an owns method, call it.
-            // We use constexpr if (C++17) to check for the method at compile time
-            // (although in our architecture it is now present for all allocators).
             return m_allocator.owns(ptr);
         }
-        
+
         /**
          * @brief Delegates allocator reset if supported.
          */
-        void reset() requires requires(Allocator a) { a.reset(); }
+        void reset() requires ResettableAllocator<Alloc>
         {
             std::lock_guard<Mutex> lock(m_mutex);
             // reset() exists for Stack, Linear, and Arena, but not for Malloc/Pool in the current design.

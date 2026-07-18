@@ -46,6 +46,18 @@ static_assert(Allocator<FallbackAllocator<LinearAllocator, MallocUpstream>>);
 static_assert(!ResettableAllocator<CanaryAllocator<MallocUpstream>>);
 static_assert(!ResettableAllocator<TrackerAllocator<MallocUpstream>>);
 
+// Ownership honesty: a decorator's guarded owns() makes it model OwningAllocator
+// ONLY when the layer it wraps does -- not a bare signature that fails to compile.
+static_assert(OwningAllocator<CanaryAllocator<LinearAllocator>>);
+static_assert(!OwningAllocator<CanaryAllocator<MallocUpstream>>);
+static_assert(OwningAllocator<TrackerAllocator<LinearAllocator>>);
+static_assert(!OwningAllocator<TrackerAllocator<MallocUpstream>>);
+
+// FallbackAllocator requires an owning primary (enforced by its constraint); it
+// is itself owning only when the fallback leg is owning too.
+static_assert(OwningAllocator<FallbackAllocator<LinearAllocator, StackAllocator>>);
+static_assert(!OwningAllocator<FallbackAllocator<LinearAllocator, MallocUpstream>>);
+
 // --- Runtime sanity: owns() actually routes by range ----------------------
 
 TEST(AllocatorConcept, OwnsAnswersByRange)
