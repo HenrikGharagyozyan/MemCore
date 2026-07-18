@@ -24,4 +24,19 @@ namespace MemCore
         { a.reset() } noexcept;
     };
 
+    // An allocator that can additionally answer whether a given pointer belongs
+    // to it. This is a cheap range check for allocators backed by a single
+    // contiguous region (Linear, Stack, Pool, Arena), but it is NOT universally
+    // implementable: a thin OS passthrough such as MallocUpstream owns no
+    // contiguous range and therefore deliberately does not model this concept.
+    //
+    // Composers that must route a pointer to the right child by ownership
+    // (e.g. FallbackAllocator's primary leg) constrain on OwningAllocator so
+    // the type system rejects a non-owning allocator at that position.
+    template <typename T>
+    concept OwningAllocator = Allocator<T> && requires(const T a, const void* ptr)
+    {
+        { a.owns(ptr) } -> std::same_as<bool>;
+    };
+
 }

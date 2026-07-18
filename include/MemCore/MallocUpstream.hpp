@@ -84,4 +84,12 @@ namespace MemCore
     // this fails to compile.
     static_assert(Allocator<MallocUpstream>);
 
+    // Design intent, enforced: MallocUpstream is a valid Allocator but NOT an
+    // OwningAllocator. malloc returns scattered blocks with no contiguous range
+    // to test a pointer against, so implementing owns() would require tracking
+    // every allocation — overhead that defeats a thin OS passthrough. It may
+    // therefore only serve as the *fallback* leg of a FallbackAllocator, never
+    // the primary. This assert makes that contract impossible to regress silently.
+    static_assert(!OwningAllocator<MallocUpstream>);
+
 }
