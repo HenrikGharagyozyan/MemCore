@@ -26,16 +26,22 @@ namespace MemCore
         std::size_t m_default_block_size; // Default block size (for example, 4 KB)
         BlockNode* m_head;                // Pointer to the current active block
 
-        // Internal helper to request a new block from Upstream
-        BlockNode* allocate_new_block(std::size_t min_size) noexcept 
+        // Internal helper to request a new block from Upstream.
+        // `alignment` is the caller's payload alignment: the block must be big
+        // enough (and aligned enough) that the first aligned payload still fits
+        // after the node header.
+        BlockNode* allocate_new_block(std::size_t min_size, std::size_t alignment) noexcept
         {
-            // We need to fit the object size plus our node header
-            std::size_t required_size = min_size + sizeof(BlockNode);
+            // Budget for the node header, the object, AND the worst-case padding
+            // needed to align the first payload. Without the (alignment - 1) term,
+            // a large-alignment request could be shifted past the end of a fresh block.
+            std::size_t required_size = sizeof(BlockNode) + (alignment - 1) + min_size;
             std::size_t size_to_alloc = std::max(required_size, m_default_block_size);
 
-            // Request memory from Upstream aligned for our header
-            Block upstream_block = m_upstream.allocate(size_to_alloc, alignof(BlockNode));
-            if (!upstream_block.ptr) 
+            // Request memory aligned for both our header and the caller's payload.
+            std::size_t block_align = std::max(alignof(BlockNode), alignment);
+            Block upstream_block = m_upstream.allocate(size_to_alloc, block_align);
+            if (!upstream_block.ptr)
             {
                 return nullptr;
             }
@@ -85,9 +91,9 @@ namespace MemCore
                 return { nullptr, 0 };
 
             // If there are no blocks yet, create the first one
-            if (!m_head) 
+            if (!m_head)
             {
-                if (!allocate_new_block(size)) 
+                if (!allocate_new_block(size, alignment))
                     return { nullptr, 0 };
             }
 
@@ -101,10 +107,10 @@ namespace MemCore
             std::size_t shift = payload_ptr - current_ptr;
 
             // If current block lacks space, allocate a new block
-            if (current->offset + shift + size > current->capacity) 
+            if (current->offset + shift + size > current->capacity)
             {
-                current = allocate_new_block(size);
-                if (!current) 
+                current = allocate_new_block(size, alignment);
+                if (!current)
                     return { nullptr, 0 };
 
                 // Recompute pointers for the new block
@@ -113,6 +119,11 @@ namespace MemCore
                 aligned_ptr = AlignForward(current_ptr, alignment);
                 payload_ptr = static_cast<std::byte*>(aligned_ptr);
                 shift = payload_ptr - current_ptr;
+
+                // Defensive: a correctly budgeted fresh block must fit. If it
+                // somehow does not, fail rather than write past the block.
+                if (current->offset + shift + size > current->capacity)
+                    return { nullptr, 0 };
             }
 
             // Move the current block cursor forward
