@@ -1,302 +1,174 @@
-[![CMake Build and Test](https://github.com/HenrikGharagyozyan/MemCore/actions/workflows/cmake.yml/badge.svg)](https://github.com/HenrikGharagyozyan/MemCore/actions/workflows/cmake.yml)
+[![CI](https://github.com/HenrikGharagyozyan/MemCore/actions/workflows/cmake.yml/badge.svg)](https://github.com/HenrikGharagyozyan/MemCore/actions/workflows/cmake.yml)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/compiler_support/20)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 # 🚀 MemCore
 
-**MemCore** is a lightweight, high-performance **header-only C++20 memory allocation library** designed for performance-critical applications such as:
+**MemCore** is a **C++20 library of composable, concept-checked memory allocators** — bump, stack, pool, arena — plus debugging and profiling decorators, aimed at performance-sensitive code such as game engines, real-time systems, and simulations.
 
-- 🎮 Game engines
-- ⚡ Real-time systems
-- 🖥️ Embedded applications
-- 📊 Simulation software
-- 🔥 High-performance C++ applications
+Instead of scattering `new`/`delete` and `malloc`/`free`, MemCore lets you assemble an allocation strategy with predictable cost and explicit lifetime control, and compose it from small, testable pieces.
 
-The goal of MemCore is to provide specialized allocators that reduce allocation overhead, minimize fragmentation, and give developers explicit control over memory lifetime.
-
-Instead of relying on frequent `malloc/free` or `new/delete` calls, MemCore allows allocating memory using predictable and optimized strategies.
+> **Status: `0.1.0`, pre-1.0 and evolving.** MemCore is built primarily as a deep study of memory management, so its coverage grows deliberately (a coalescing free-list, buddy allocator, and concurrency work are still on the roadmap). The pieces that exist are tested — including under AddressSanitizer/UBSan — but the API is not yet stable. See the roadmap below.
 
 ---
 
-## ✨ Features
+## ✨ Highlights
 
-### Header-only
+- **Concept-driven contract.** Every allocator satisfies the `Allocator` concept (`allocate` / `deallocate`); capabilities that not all allocators can provide are modeled as refinements — `ResettableAllocator` (`reset()`) and `OwningAllocator` (`owns()`). Compositions are constrained on these concepts, so misuse is a compile error with a readable message rather than a runtime surprise.
+- **Composable by design.** Wrap any allocator with decorators — bounds-checking canaries, tagged tracking, a mutex, or a fallback path — without touching the underlying allocator.
+- **Alignment-correct.** Over-aligned types (e.g. `alignas(64)`) are handled throughout, and the whole suite runs clean under ASan/UBSan in CI.
+- **STL & language integration.** `StlAdapter` plugs any allocator into standard containers; `New`/`Delete` helpers and an `operator new`/`delete` injection macro cover object lifetimes.
 
-No compilation step required.
-
-Simply include the headers:
-
-```cpp
-#include <MemCore/LinearAllocator.hpp>
-```
-
-and start using the allocators.
-
-### STL Compatible
-
-MemCore provides `StlAdapter`, allowing custom allocators to be used with standard containers:
-
-```cpp
-std::vector<int, MemCore::StlAdapter<int, Allocator>>
-```
-
-Compatible with:
-
-- `std::vector`
-- `std::list`
-- `std::deque`
-- `std::unordered_map`
-- and other STL containers
-
-### Memory Safety
-
-All allocators handle:
-
-- alignment requirements
-- correct pointer arithmetic
-- lifetime management
-- bounds checking where applicable
-
-### Memory Profiling
-
-`TrackerAllocator` provides allocation statistics:
-
-- total allocated memory
-- allocation count
-- peak memory usage
-- leak detection support
-
-Example:
-
-```cpp
-tracker.print_stats();
-```
-
-## 📦 Allocators
-
-| Allocator | Allocation | Deallocation | Fragmentation | Use Case |
-|---|---|---|---|---|
-| LinearAllocator | O(1) | O(1) reset | None | Frame memory, temporary data |
-| StackAllocator | O(1) | O(1) LIFO | None | Scoped allocations |
-| PoolAllocator | O(1) | O(1) | None | Objects with identical size |
-| ArenaAllocator | O(1) amortized | O(1) reset | None | Growing collections |
-| TrackerAllocator | Depends on upstream | Depends on upstream | Depends on upstream | Debugging and profiling |
-
-## 🏗️ Architecture
-
-MemCore follows a layered allocator design:
+## 🧱 Architecture
 
 ```
-                User Code
-                    |
-                    |
-             STL Adapter Layer
-                    |
-                    |
-            Specialized Allocators
-                    |
-        +-----------+-----------+
-        |           |           |
-     Linear      Pool       Arena
-        |
-        |
-   Memory Source
-        |
-        |
-   MallocUpstream
+        Adapters:   StlAdapter · New/Delete · MEMCORE_ENABLE_CLASS_ALLOCATOR
+                                     |
+        Decorators: Tracker · Canary · ThreadSafe · Fallback   (wrap an Allocator)
+                                     |
+        Allocators: Linear · Stack · Pool · Arena              (own a region)
+                                     |
+        Upstream:   MallocUpstream · VirtualUpstream           (raw memory from the OS)
 ```
 
-Allocators are independent and can be composed together.
+## 📦 Components
 
-Example:
+### Upstream sources
+| Type | Backed by | Notes |
+|---|---|---|
+| `MallocUpstream` | `posix_memalign` / `_aligned_malloc` | Portable, alignment-correct. Non-owning (see `OwningAllocator`). |
+| `VirtualUpstream` | `mmap` / `VirtualAlloc` | Page-granular OS memory. |
 
-```
-MallocUpstream
-        |
-LinearAllocator
-        |
-TrackerAllocator
-        |
-Application
-```
+### Allocators
+| Allocator | Allocation | Deallocation | Use case |
+|---|---|---|---|
+| `LinearAllocator` | O(1) | reset only | Frame / scratch memory |
+| `StackAllocator` | O(1) | O(1) LIFO (+ markers) | Nested scoped allocations |
+| `PoolAllocator` | O(1) | O(1), any order | Many same-size objects |
+| `ArenaAllocator` | O(1) amortized | reset only | Growing collections |
 
-## 📥 Installation
+### Decorators (wrap any `Allocator`)
+| Decorator | Adds |
+|---|---|
+| `TrackerAllocator` | Per-tag usage & peak stats, leak reporting |
+| `CanaryAllocator` | Front/back guard bytes; aborts on over/underflow |
+| `ThreadSafeAllocator` | Mutex around a wrapped allocator |
+| `FallbackAllocator` | Primary allocator with a fallback on failure |
 
-### Option 1: CMake FetchContent (Recommended)
+## 📚 Requirements
 
-Add:
+- A C++20 compiler: GCC 11+, Clang 14+, or MSVC 2022+
+- CMake 3.21+
 
-```cmake
-include(FetchContent)
+CI builds and tests on Ubuntu, Windows, and macOS in Debug and Release, plus a dedicated ASan+UBSan run.
 
-FetchContent_Declare(
-    MemCore
-    GIT_REPOSITORY https://github.com/YOUR_USERNAME/MemCore.git
-    GIT_TAG main
-)
-
-FetchContent_MakeAvailable(MemCore)
-
-target_link_libraries(MyProject PRIVATE MemCore)
-```
-
-### Option 2: Git Submodule
-
-```bash
-git submodule add https://github.com/YOUR_USERNAME/MemCore.git third_party/MemCore
-```
-
-Then:
-
-```cmake
-add_subdirectory(third_party/MemCore)
-
-target_link_libraries(MyProject PRIVATE MemCore)
-```
-
-## ⚡ Quick Start
-
-### Linear Allocator
-
-```cpp
-#include <MemCore/LinearAllocator.hpp>
-#include <MemCore/MallocUpstream.hpp>
-
-int main()
-{
-    MemCore::MallocUpstream upstream;
-
-    auto block = upstream.allocate(1024, 8);
-
-    MemCore::LinearAllocator allocator(block);
-
-    auto memory = allocator.allocate(sizeof(int), alignof(int));
-
-    int* value = static_cast<int*>(memory.ptr);
-
-    *value = 42;
-
-    allocator.reset();
-
-    upstream.deallocate(block.ptr, block.size);
-}
-```
-
-## 📊 Tracking Allocations
-
-```cpp
-#include <MemCore/TrackerAllocator.hpp>
-
-MemCore::TrackerAllocator tracker(allocator);
-
-auto block = tracker.allocate(256, 8);
-
-tracker.print_stats();
-```
-
-Example output:
-
-```
-===== Memory Statistics =====
-
-Allocations : 128
-Current     : 4096 bytes
-Peak        : 8192 bytes
-
-=============================
-```
-
-## 🔥 STL Integration
-
-Example using `std::vector`:
-
-```cpp
-#include <vector>
-
-#include <MemCore/LinearAllocator.hpp>
-#include <MemCore/StlAdapter.hpp>
-
-
-void process_frame(MemCore::Block memory)
-{
-    MemCore::LinearAllocator allocator(memory);
-
-    using Alloc = MemCore::StlAdapter<int,
-                                      MemCore::LinearAllocator>;
-
-    std::vector<int, Alloc> data(
-        Alloc(allocator)
-    );
-
-
-    data.push_back(10);
-    data.push_back(20);
-    data.push_back(30);
-}
-```
-
-The container now allocates memory from the custom allocator.
-
-## 🎯 Design Goals
-
-MemCore focuses on:
-
-- ✅ predictable allocation time
-- ✅ minimal fragmentation
-- ✅ explicit memory lifetime control
-- ✅ composable allocator architecture
-- ✅ modern C++20 design
-
-## 🧪 Testing
-
-Build:
+## 🔧 Build & test
 
 ```bash
 cmake -B build
 cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
-Run tests:
+Useful options:
+
+| Option | Default | Effect |
+|---|---|---|
+| `MEMCORE_BUILD_TESTS` | `ON` when top-level | Build the unit tests (fetches googletest) |
+| `MEMCORE_INSTALL` | `ON` when top-level | Generate install & `find_package` rules |
+
+Run the suite under sanitizers:
 
 ```bash
-ctest --test-dir build
+cmake -B build-san -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
+cmake --build build-san
+ctest --test-dir build-san --output-on-failure
 ```
 
-## 📁 Project Structure
+## 📥 Using MemCore in your project
 
-```
-MemCore/
-|
-├── include/
-│   └── MemCore/
-│       ├── LinearAllocator.hpp
-│       ├── StackAllocator.hpp
-│       ├── PoolAllocator.hpp
-│       ├── ArenaAllocator.hpp
-│       ├── TrackerAllocator.hpp
-│       └── StlAdapter.hpp
-|
-├── tests/
-|
-├── examples/
-|
-├── CMakeLists.txt
-|
-└── LICENSE
+### Installed package
+
+```bash
+cmake -B build -DMEMCORE_BUILD_TESTS=OFF
+cmake --build build
+cmake --install build --prefix /your/prefix
 ```
 
-## 📚 Requirements
+```cmake
+find_package(MemCore 0.1 REQUIRED)
+target_link_libraries(my_app PRIVATE MemCore::MemCore)
+```
 
-C++20 compatible compiler
+### FetchContent
 
-Supported:
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    MemCore
+    GIT_REPOSITORY https://github.com/HenrikGharagyozyan/MemCore.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(MemCore)   # tests are off automatically as a subproject
 
-- GCC 11+
-- Clang 14+
-- MSVC 2022+
+target_link_libraries(my_app PRIVATE MemCore::MemCore)
+```
+
+## ⚡ Quick start
+
+### Linear (bump) allocator
+
+```cpp
+#include <MemCore/MallocUpstream.hpp>
+#include <MemCore/LinearAllocator.hpp>
+
+MemCore::MallocUpstream upstream;
+MemCore::Block chunk = upstream.allocate(1024, alignof(std::max_align_t));
+
+MemCore::LinearAllocator arena(chunk);
+MemCore::Block b = arena.allocate(sizeof(int), alignof(int));
+*static_cast<int*>(b.ptr) = 42;
+
+arena.reset();                                 // reclaim everything at once
+upstream.deallocate(chunk.ptr, chunk.size);
+```
+
+### STL container on a custom allocator
+
+```cpp
+#include <vector>
+#include <MemCore/LinearAllocator.hpp>
+#include <MemCore/StlAdapter.hpp>
+
+MemCore::LinearAllocator arena(chunk);
+using Alloc = MemCore::StlAdapter<int, MemCore::LinearAllocator>;
+
+std::vector<int, Alloc> data{ Alloc(arena) };
+data.push_back(10);
+```
+
+### Tagged tracking
+
+```cpp
+#include <MemCore/TrackerAllocator.hpp>
+#include <MemCore/MemoryTags.hpp>
+
+MemCore::TrackerAllocator tracker(upstream);   // wraps any allocator
+{
+    MemCore::TagScope gfx(MemCore::MemoryTag::Graphics);
+    MemCore::Block b = tracker.allocate(256, 8);
+    // ... use b ...
+    tracker.deallocate(b.ptr, b.size);
+}
+tracker.print_stats();                         // per-tag current & peak, leak check
+```
+
+## 🗺️ Roadmap
+
+Implemented: aligned upstreams, linear/stack/pool/arena allocators, STL & class adapters, tagged tracking, canary debugging, fallback and thread-safe decorators, a concept-based contract, install/packaging, and CI with sanitizers.
+
+Planned: coalescing free-list allocator, buddy allocator, benchmarks vs `malloc`/`std::pmr`, and a dedicated concurrency layer.
 
 ## 📜 License
 
-MemCore is licensed under the MIT License.
-
-See [LICENSE](LICENSE) for details.
+MemCore is licensed under the MIT License. See [LICENSE](LICENSE).

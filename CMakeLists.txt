@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(MemCore VERSION 1.0.0 LANGUAGES CXX)
+project(MemCore VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -109,4 +109,25 @@ if(MEMCORE_BUILD_TESTS)
 
     include(GoogleTest)
     gtest_discover_tests(MemCore_UnitTests)
+endif()
+
+# ==========================================
+# BENCHMARKS
+# ==========================================
+# Off by default: they need a Release build and pull in Google Benchmark.
+option(MEMCORE_BUILD_BENCHMARKS "Build the MemCore benchmarks" OFF)
+
+if(MEMCORE_BUILD_BENCHMARKS)
+    include(FetchContent)
+    FetchContent_Declare(
+      googlebenchmark
+      GIT_REPOSITORY https://github.com/google/benchmark.git
+      GIT_TAG        v1.8.3
+    )
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+
+    add_executable(MemCore_Benchmarks benchmarks/AllocatorBench.cpp)
+    target_link_libraries(MemCore_Benchmarks PRIVATE MemCore benchmark::benchmark)
 endif()
