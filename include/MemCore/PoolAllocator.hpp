@@ -3,6 +3,7 @@
 #include "Align.hpp"
 #include <cstddef>
 #include <cassert>
+#include <algorithm>
 
 namespace MemCore 
 {
@@ -30,30 +31,34 @@ namespace MemCore
             std::byte* base = static_cast<std::byte*>(m_memory.ptr);
             std::size_t memory_size = m_memory.size;
 
+            // Chunks hold an intrusive FreeNode while free, so every chunk must
+            // be aligned for BOTH the caller's requirement and FreeNode itself.
+            // If the user asks for less than alignof(FreeNode) (e.g. 4 for a
+            // struct of floats), threading the free list through a 4-aligned
+            // chunk would be a misaligned pointer write (UB). Widen internally.
+            const std::size_t effective_align = std::max(m_alignment, alignof(FreeNode));
+
             // 1. Align the start address
-            void* aligned_base = AlignForward(base, m_alignment);
+            void* aligned_base = AlignForward(base, effective_align);
             std::byte* current = static_cast<std::byte*>(aligned_base);
-            
+
             // Count how many bytes were lost due to initial alignment
             std::size_t shift = current - base;
-            if (shift >= memory_size) 
-                return; 
-            
+            if (shift >= memory_size)
+                return;
+
             std::size_t available_size = memory_size - shift;
 
             // 2. Chunk size must be at least as large as a FreeNode pointer!
             std::size_t actual_chunk_size = m_chunk_size;
-            if (actual_chunk_size < sizeof(FreeNode)) 
+            if (actual_chunk_size < sizeof(FreeNode))
             {
                 actual_chunk_size = sizeof(FreeNode);
             }
-            
-            // 3. Chunk size must be a multiple of alignment so ALL chunks are aligned
-            std::size_t remainder = actual_chunk_size % m_alignment;
-            if (remainder != 0) 
-            {
-                actual_chunk_size += (m_alignment - remainder);
-            }
+
+            // 3. Chunk size must be a multiple of the effective alignment so
+            // EVERY chunk (not just the first) stays aligned for the FreeNode.
+            actual_chunk_size = AlignUp(actual_chunk_size, effective_align);
 
             // 4. Count how many chunks fit in the available memory
             std::size_t num_chunks = available_size / actual_chunk_size;
