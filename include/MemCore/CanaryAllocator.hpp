@@ -81,7 +81,9 @@ namespace MemCore
             return { payload, size };
         }
 
-        void deallocate(void* ptr, std::size_t /*size*/)
+        // noexcept: on corruption we std::abort (never throw), and the wrapped
+        // deallocate is itself noexcept, so this satisfies the Allocator contract.
+        void deallocate(void* ptr, std::size_t /*size*/) noexcept
         {
             if (!ptr)
                 return;

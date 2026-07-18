@@ -7,20 +7,29 @@
 namespace MemCore
 {
 
-    // Concept for an allocator. Any class that wants to be an allocator in our library
-    // must implement these three methods with exactly the same signatures.
+    // The minimal allocator contract: every allocator can hand out and reclaim
+    // raw, aligned memory. Capabilities that only SOME allocators can provide
+    // (resetting everything at once, answering ownership) are modeled as
+    // refinements below rather than forced into this base. Keeping the base
+    // small is what lets decorators (Canary, Tracker, Fallback) qualify as
+    // allocators even though they leave reset()/owns() to the wrapped layer.
     template <typename T>
-    concept Allocator = requires(T a, std::size_t size, std::size_t alignment, void* ptr) 
+    concept Allocator = requires(T a, std::size_t size, std::size_t alignment, void* ptr)
     {
-        // 1. The allocate method must take a size and an alignment,
-        // and return our Block structure.
+        // Take a size and an alignment, return our Block structure.
         { a.allocate(size, alignment) } -> std::same_as<Block>;
 
-        // 2. The deallocate method must free memory.
-        // noexcept means it is guaranteed not to throw an exception (crash).
+        // Free memory. Deallocation must never throw (like a destructor).
         { a.deallocate(ptr, size) } noexcept;
+    };
 
-        // 3. The reset method must immediately free ALL memory owned by the allocator.
+    // An allocator that can release ALL of its memory at once. Natural for
+    // arena/stack/linear/pool styles and a (legal) no-op for a system malloc
+    // wrapper. Decorators deliberately do NOT model this: they satisfy the base
+    // Allocator but forward any real reset to the layer they wrap.
+    template <typename T>
+    concept ResettableAllocator = Allocator<T> && requires(T a)
+    {
         { a.reset() } noexcept;
     };
 
