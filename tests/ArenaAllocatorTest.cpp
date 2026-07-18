@@ -2,9 +2,37 @@
 
 #include <MemCore/ArenaAllocator.hpp>
 #include <MemCore/MallocUpstream.hpp>
+#include <MemCore/Align.hpp>
+
+#include <cstring>
 
 
-TEST(ArenaAllocatorTest, GrowthAndReset) 
+// The A4 fix: a large-alignment request must not be shifted past the end of a
+// freshly grown block. With a tiny default block size the alignment padding
+// would previously overrun the block.
+TEST(ArenaAllocatorTest, LargeAlignmentFitsWithinBlock)
+{
+    MemCore::MallocUpstream upstream;
+    MemCore::ArenaAllocator arena(upstream, 64); // tiny default block
+
+    constexpr std::size_t kAlign = 128;
+    MemCore::Block b = arena.allocate(32, kAlign);
+
+    ASSERT_NE(b.ptr, nullptr);
+    EXPECT_TRUE(MemCore::IsAligned(b.ptr, kAlign));
+    EXPECT_TRUE(arena.owns(b.ptr));
+
+    // Writing the full payload must stay within the block (ASan-verified).
+    std::memset(b.ptr, 0xCD, 32);
+
+    // A second aligned allocation should also succeed.
+    MemCore::Block b2 = arena.allocate(16, kAlign);
+    ASSERT_NE(b2.ptr, nullptr);
+    EXPECT_TRUE(MemCore::IsAligned(b2.ptr, kAlign));
+    std::memset(b2.ptr, 0xEF, 16);
+}
+
+TEST(ArenaAllocatorTest, GrowthAndReset)
 {
     MemCore::MallocUpstream upstream;
     
