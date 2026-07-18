@@ -63,17 +63,23 @@ namespace MemCore
         }
 
         // Fine-grained memory deallocation (must occur strictly in reverse order!)
-        void deallocate(void* ptr, std::size_t size) noexcept 
+        void deallocate(void* ptr, std::size_t size) noexcept
         {
-            if (!ptr) 
+            if (!ptr)
                 return;
 
             std::byte* base = static_cast<std::byte*>(m_memory.ptr);
             std::byte* payload_ptr = static_cast<std::byte*>(ptr);
 
-            // LIFO check: the block being freed must be the topmost block!
-            // In other words, current m_offset should exactly equal the end of this block.
-            assert((payload_ptr + size) - base == m_offset && "Out-of-order deallocation in StackAllocator! LIFO violated.");
+            // LIFO precondition: the block being freed must be the topmost one,
+            // i.e. its end must line up exactly with the current cursor.
+            // In debug this trips an assert; in release we refuse to act rather
+            // than roll the cursor back through an unrelated allocation.
+            if (static_cast<std::size_t>((payload_ptr + size) - base) != m_offset)
+            {
+                assert(false && "Out-of-order deallocation in StackAllocator! LIFO violated.");
+                return;
+            }
 
             // Step back to read the header
             std::byte* header_ptr = payload_ptr - sizeof(Header);
