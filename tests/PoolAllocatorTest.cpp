@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <MemCore/PoolAllocator.hpp>
 #include <MemCore/MallocUpstream.hpp>
+#include <MemCore/Align.hpp>
 #include <vector>
 
 class PoolAllocatorTest : public ::testing::Test 
@@ -20,7 +21,29 @@ protected:
     }
 };
 
-TEST_F(PoolAllocatorTest, AllocateAndDeallocateAnyOrder) 
+// Regression (found via UBSan): when the user's alignment is smaller than
+// alignof(FreeNode), chunks must still be aligned for the intrusive free-list
+// node. chunk_size 28 / alignment 4 previously placed odd chunks at 4-aligned
+// (non-8) addresses, making the free-list pointer write misaligned UB.
+TEST_F(PoolAllocatorTest, ChunksAlignedForFreeNodeUnderSmallAlignment)
+{
+    MemCore::PoolAllocator pool(chunk, 28, 4);
+
+    std::vector<void*> ptrs;
+    for (int i = 0; i < 6; ++i)
+    {
+        MemCore::Block b = pool.allocate(28, 4);
+        ASSERT_NE(b.ptr, nullptr);
+        // Must satisfy the internal FreeNode alignment (alignof a pointer),
+        // not just the user's 4.
+        EXPECT_TRUE(MemCore::IsAligned(b.ptr, alignof(void*)));
+        ptrs.push_back(b.ptr);
+    }
+    for (void* p : ptrs)
+        pool.deallocate(p, 28);
+}
+
+TEST_F(PoolAllocatorTest, AllocateAndDeallocateAnyOrder)
 {
     // Create a pool for 32-byte chunks with 8-byte alignment
     MemCore::PoolAllocator pool(chunk, 32, 8);
