@@ -10,8 +10,8 @@
 namespace MemCore 
 {
 
-    template <typename Upstream>
-    class ArenaAllocator 
+    template <Allocator Upstream>
+    class ArenaAllocator
     {
     private:
         // Intrusive list node stored at the beginning of each large block

@@ -12,8 +12,8 @@
 
 namespace MemCore 
 {
-    template <typename UpstreamAllocator>
-    class TrackerAllocator 
+    template <Allocator UpstreamAllocator>
+    class TrackerAllocator
     {
     private:
         UpstreamAllocator* m_upstream;
@@ -116,9 +116,13 @@ namespace MemCore
             return m_peak_per_tag[static_cast<std::size_t>(tag)].load();
         }
 
-        bool owns(const void* ptr) const noexcept 
+        // Only exposed when the wrapped layer can answer ownership, so the
+        // tracker does not falsely advertise OwningAllocator over a non-owning
+        // upstream (e.g. MallocUpstream).
+        bool owns(const void* ptr) const noexcept
+            requires OwningAllocator<UpstreamAllocator>
         {
-            if (!ptr) 
+            if (!ptr)
                 return false;
 
             const std::byte* payload = static_cast<const std::byte*>(ptr);

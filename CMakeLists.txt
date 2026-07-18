@@ -31,6 +31,7 @@ enable_testing()
 # List EVERY test file here
 add_executable(MemCore_UnitTests
     tests/AlignTest.cpp
+    tests/AllocatorConceptTest.cpp
     tests/MallocUpstreamTest.cpp
     tests/LinearAllocatorTest.cpp
     tests/StackAllocatorTest.cpp

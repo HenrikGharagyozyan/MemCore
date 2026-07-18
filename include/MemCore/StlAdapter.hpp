@@ -1,5 +1,6 @@
 #pragma once
 #include "Types.hpp"
+#include "AllocatorConcept.hpp"
 #include <cstddef>
 #include <new>
 
@@ -8,8 +9,8 @@ namespace MemCore
 
     // Template adapter that wraps ANY of our allocators
     // into the standard C++ allocator interface.
-    template <typename T, typename AllocatorType>
-    class StlAdapter 
+    template <typename T, Allocator AllocatorType>
+    class StlAdapter
     {
     public:
         using value_type = T;
