@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# MemCore's ThreadSafeAllocator pulls in std::mutex, so consumers need the
+# platform threading library. Resolve it before importing our targets.
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/MemCoreTargets.cmake")
+
+check_required_components(MemCore)

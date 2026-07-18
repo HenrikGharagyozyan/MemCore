@@ -5,14 +5,67 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(GNUInstallDirs)
+
 add_library(MemCore STATIC
     src/VirtualUpstream.cpp
 )
+add_library(MemCore::MemCore ALIAS MemCore)
 
 target_include_directories(MemCore PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+
+# ThreadSafeAllocator uses std::mutex; propagate the platform thread
+# requirement so consumers link it transitively.
+find_package(Threads REQUIRED)
+target_link_libraries(MemCore PUBLIC Threads::Threads)
+
+# ==========================================
+# INSTALL / EXPORT  -> enables find_package(MemCore)
+# ==========================================
+# Off when consumed as a subproject so a parent's install isn't polluted.
+option(MEMCORE_INSTALL "Generate MemCore install & package-config rules" ${PROJECT_IS_TOP_LEVEL})
+
+if(MEMCORE_INSTALL)
+    include(CMakePackageConfigHelpers)
+
+    install(TARGETS MemCore
+        EXPORT MemCoreTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+
+    install(EXPORT MemCoreTargets
+        FILE MemCoreTargets.cmake
+        NAMESPACE MemCore::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MemCore
+    )
+
+    configure_package_config_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/MemCoreConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/MemCoreConfig.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MemCore
+    )
+
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/MemCoreConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/MemCoreConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/MemCoreConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MemCore
+    )
+endif()
 
 # ==========================================
 # TESTS
@@ -52,8 +105,7 @@ if(MEMCORE_BUILD_TESTS)
         tests/VirtualUpstreamTest.cpp
     )
 
-    find_package(Threads REQUIRED)
-    target_link_libraries(MemCore_UnitTests PRIVATE MemCore GTest::gtest_main Threads::Threads)
+    target_link_libraries(MemCore_UnitTests PRIVATE MemCore GTest::gtest_main)
 
     include(GoogleTest)
     gtest_discover_tests(MemCore_UnitTests)
