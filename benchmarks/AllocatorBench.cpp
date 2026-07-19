@@ -14,6 +14,7 @@
 #include <MemCore/MallocUpstream.hpp>
 #include <MemCore/LinearAllocator.hpp>
 #include <MemCore/PoolAllocator.hpp>
+#include <MemCore/FreeListAllocator.hpp>
 
 #include <cstdlib>
 #include <cstddef>
@@ -105,5 +106,69 @@ static void BM_Churn_Malloc(benchmark::State& state)
     }
 }
 BENCHMARK(BM_Churn_Malloc);
+
+// --- Workload 3: variable-size fragmenting churn ---------------------------
+// A rolling window of live allocations of varying size: every iteration frees
+// the oldest and allocates a new one. This exercises the free list, splitting,
+// and coalescing under steady-state fragmentation -- the FreeListAllocator's
+// reason to exist.
+
+namespace
+{
+    constexpr std::size_t kWindow = 64;
+
+    std::size_t churn_size(std::size_t i) noexcept
+    {
+        return 16 + (i * 37) % 256; // 16..271 bytes, deterministic
+    }
+}
+
+static void BM_Frag_FreeList(benchmark::State& state)
+{
+    std::vector<std::byte> buffer(kArenaSize);
+    MemCore::FreeListAllocator fl(MemCore::Block{ buffer.data(), buffer.size() });
+
+    MemCore::Block window[kWindow] = {};
+    std::size_t idx = 0;
+    std::size_t i = 0;
+
+    for (auto _ : state)
+    {
+        if (window[idx].ptr)
+            fl.deallocate(window[idx].ptr, window[idx].size);
+
+        window[idx] = fl.allocate(churn_size(i), 8);
+        benchmark::DoNotOptimize(window[idx].ptr);
+
+        idx = (idx + 1) % kWindow;
+        ++i;
+    }
+
+    for (auto& b : window)
+        if (b.ptr)
+            fl.deallocate(b.ptr, b.size);
+}
+BENCHMARK(BM_Frag_FreeList);
+
+static void BM_Frag_Malloc(benchmark::State& state)
+{
+    void* window[kWindow] = {};
+    std::size_t idx = 0;
+    std::size_t i = 0;
+
+    for (auto _ : state)
+    {
+        std::free(window[idx]);
+        window[idx] = std::malloc(churn_size(i));
+        benchmark::DoNotOptimize(window[idx]);
+
+        idx = (idx + 1) % kWindow;
+        ++i;
+    }
+
+    for (void* p : window)
+        std::free(p);
+}
+BENCHMARK(BM_Frag_Malloc);
 
 BENCHMARK_MAIN();
