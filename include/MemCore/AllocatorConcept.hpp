@@ -21,7 +21,7 @@ namespace MemCore
 
         // Free memory. Deallocation must never throw (like a destructor).
         { a.deallocate(ptr, size) } noexcept;
-    };
+    }; 
 
     // An allocator that can release ALL of its memory at once. Natural for
     // arena/stack/linear/pool styles and a (legal) no-op for a system malloc

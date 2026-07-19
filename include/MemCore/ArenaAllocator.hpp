@@ -78,9 +78,9 @@ namespace MemCore
 
         // Allow moving
         ArenaAllocator(ArenaAllocator&& other) noexcept
-            : m_upstream(other.m_upstream), 
-              m_default_block_size(other.m_default_block_size), 
-              m_head(other.m_head) 
+            : m_upstream(other.m_upstream)
+            , m_default_block_size(other.m_default_block_size)
+            , m_head(other.m_head) 
         {
             other.m_head = nullptr;
         }
