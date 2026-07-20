@@ -2,6 +2,7 @@
 
 #include <MemCore/AllocatorConcept.hpp>
 #include <MemCore/MallocUpstream.hpp>
+#include <MemCore/VirtualUpstream.hpp>
 #include <MemCore/LinearAllocator.hpp>
 #include <MemCore/StackAllocator.hpp>
 #include <MemCore/PoolAllocator.hpp>
@@ -27,10 +28,13 @@ static_assert(OwningAllocator<ArenaAllocator<MallocUpstream>>);
 // OwningAllocator refines Allocator, so every owning allocator is an allocator.
 static_assert(Allocator<LinearAllocator>);
 
-// The thin OS passthrough is a valid Allocator but deliberately NOT owning:
-// it may only be the fallback leg of a FallbackAllocator, never the primary.
+// The thin OS passthroughs are valid Allocators but deliberately NOT owning:
+// they own no contiguous range, so they may only be the fallback leg of a
+// FallbackAllocator, never the primary.
 static_assert(Allocator<MallocUpstream>);
 static_assert(!OwningAllocator<MallocUpstream>);
+static_assert(Allocator<VirtualUpstream>);
+static_assert(!OwningAllocator<VirtualUpstream>);
 
 // reset() is a refinement, not part of the base contract. Allocators over a
 // region (and the malloc passthrough, via a no-op) can reset everything.
