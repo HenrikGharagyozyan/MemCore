@@ -9,6 +9,10 @@
 #include <MemCore/CanaryAllocator.hpp>
 #include <MemCore/TrackerAllocator.hpp>
 #include <MemCore/FallbackAllocator.hpp>
+#include <MemCore/ThreadSafeAllocator.hpp>
+#include <MemCore/StlAdapter.hpp>
+
+#include <vector>
 
 using namespace MemCore;
 
@@ -58,7 +62,42 @@ static_assert(!OwningAllocator<TrackerAllocator<MallocUpstream>>);
 static_assert(OwningAllocator<FallbackAllocator<LinearAllocator, StackAllocator>>);
 static_assert(!OwningAllocator<FallbackAllocator<LinearAllocator, MallocUpstream>>);
 
+// ThreadSafeAllocator must model the contract too, otherwise it cannot appear
+// at any composition point (StlAdapter, Arena upstream, inside a decorator).
+// Its operations are noexcept because a mutex failure is unrecoverable here.
+static_assert(Allocator<ThreadSafeAllocator<LinearAllocator>>);
+static_assert(ResettableAllocator<ThreadSafeAllocator<LinearAllocator>>);
+static_assert(OwningAllocator<ThreadSafeAllocator<LinearAllocator>>);
+
+// It must also compose: wrapping it in a decorator and using it as an Arena
+// upstream are both constrained on Allocator.
+static_assert(Allocator<TrackerAllocator<ThreadSafeAllocator<LinearAllocator>>>);
+static_assert(Allocator<ArenaAllocator<ThreadSafeAllocator<MallocUpstream>>>);
+
 // --- Runtime sanity: owns() actually routes by range ----------------------
+
+// Regression for the API freeze: a ThreadSafeAllocator can be handed to an STL
+// container through StlAdapter. This did not compile before its operations were
+// made noexcept, because StlAdapter is constrained on the Allocator concept.
+TEST(AllocatorConcept, ThreadSafeAllocatorComposesWithStlAdapter)
+{
+    MallocUpstream up;
+    Block chunk = up.allocate(4096, 16);
+    LinearAllocator lin(chunk);
+    ThreadSafeAllocator<LinearAllocator> safe(lin);
+
+    using Alloc = StlAdapter<int, ThreadSafeAllocator<LinearAllocator>>;
+    std::vector<int, Alloc> v{ Alloc(safe) };
+
+    for (int i = 0; i < 32; ++i)
+        v.push_back(i);
+
+    EXPECT_EQ(v.size(), 32u);
+    EXPECT_EQ(v[31], 31);
+    EXPECT_TRUE(safe.owns(v.data()));
+
+    up.deallocate(chunk.ptr, chunk.size);
+}
 
 TEST(AllocatorConcept, OwnsAnswersByRange)
 {

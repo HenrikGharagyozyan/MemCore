@@ -1,8 +1,10 @@
 #pragma once
 #include "Types.hpp"
 #include "AllocatorConcept.hpp"
+
 #include <cstddef>
 #include <new>
+
 
 namespace MemCore 
 {

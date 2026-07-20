@@ -31,10 +31,18 @@ namespace MemCore
         ThreadSafeAllocator(const ThreadSafeAllocator&) = delete;
         ThreadSafeAllocator& operator=(const ThreadSafeAllocator&) = delete;
 
+        // NOTE on noexcept: locking is the only operation here that can fail,
+        // and a mutex error (std::system_error) is unrecoverable for an
+        // allocator -- there is no sensible way to report it through this API.
+        // Declaring these noexcept turns such a failure into a terminate, and
+        // is what lets ThreadSafeAllocator model the Allocator concept at all.
+        // Without it the decorator cannot be used with StlAdapter, as an Arena
+        // upstream, or inside any other decorator.
+
         /**
          * @brief Allocates memory while holding the mutex.
          */
-        Block allocate(std::size_t size, std::size_t alignment) 
+        Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
             std::lock_guard<Mutex> lock(m_mutex);
             return m_allocator.allocate(size, alignment);
@@ -43,7 +51,7 @@ namespace MemCore
         /**
          * @brief Deallocates memory while holding the mutex.
          */
-        void deallocate(void* ptr, std::size_t size) 
+        void deallocate(void* ptr, std::size_t size) noexcept
         {
             std::lock_guard<Mutex> lock(m_mutex);
             m_allocator.deallocate(ptr, size);
@@ -52,7 +60,7 @@ namespace MemCore
         /**
          * @brief Delegates ownership checks if the underlying allocator supports them.
          */
-        bool owns(const void* ptr) const
+        bool owns(const void* ptr) const noexcept
             requires OwningAllocator<Alloc>
         {
             std::lock_guard<Mutex> lock(m_mutex);
@@ -60,13 +68,12 @@ namespace MemCore
         }
 
         /**
-         * @brief Delegates allocator reset if supported.
+         * @brief Delegates allocator reset if the wrapped allocator supports it.
          */
-        void reset() requires ResettableAllocator<Alloc>
+        void reset() noexcept
+            requires ResettableAllocator<Alloc>
         {
             std::lock_guard<Mutex> lock(m_mutex);
-            // reset() exists for Stack, Linear, and Arena, but not for Malloc/Pool in the current design.
-            // Keep the call direct, assuming use with arenas or stacks.
             m_allocator.reset();
         }
     };
