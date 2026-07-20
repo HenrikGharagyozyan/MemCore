@@ -88,10 +88,44 @@ namespace MemCore
             initialize_free_list();
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) noexcept 
+        // Copying would duplicate the free list over the SAME region, so two
+        // pools would hand out the same chunks. Move instead, which leaves the
+        // source empty (its allocate() then returns nullptr).
+        PoolAllocator(const PoolAllocator&) = delete;
+        PoolAllocator& operator=(const PoolAllocator&) = delete;
+
+        PoolAllocator(PoolAllocator&& other) noexcept
+            : m_memory(other.m_memory)
+            , m_chunk_size(other.m_chunk_size)
+            , m_alignment(other.m_alignment)
+            , m_free_list(other.m_free_list)
         {
+            other.m_memory = { nullptr, 0 };
+            other.m_free_list = nullptr;
+        }
+
+        PoolAllocator& operator=(PoolAllocator&& other) noexcept
+        {
+            if (this != &other)
+            {
+                m_memory = other.m_memory;
+                m_chunk_size = other.m_chunk_size;
+                m_alignment = other.m_alignment;
+                m_free_list = other.m_free_list;
+                other.m_memory = { nullptr, 0 };
+                other.m_free_list = nullptr;
+            }
+            return *this;
+        }
+
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept 
+        {
+            // Zero-size requests yield no object.
+            if (size == 0)
+                return { nullptr, 0 };
+
             // The pool is strict: it can only return its fixed size and alignment
-            if (size > m_chunk_size || alignment > m_alignment || !m_free_list) 
+            if (size > m_chunk_size || alignment > m_alignment || !m_free_list)
             {
                 return { nullptr, 0 };
             }

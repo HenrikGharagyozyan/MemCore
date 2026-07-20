@@ -150,10 +150,37 @@ namespace MemCore
             init_single_free_block();
         }
 
+        // Copying would duplicate the free list over the SAME region, so two
+        // allocators would hand out overlapping blocks. Move instead, which
+        // leaves the source empty (its allocate() then returns nullptr).
         FreeListAllocator(const FreeListAllocator&) = delete;
         FreeListAllocator& operator=(const FreeListAllocator&) = delete;
 
-        Block allocate(std::size_t size, std::size_t alignment) noexcept
+        FreeListAllocator(FreeListAllocator&& other) noexcept
+            : m_region_begin(other.m_region_begin)
+            , m_region_end(other.m_region_end)
+            , m_free_head(other.m_free_head)
+        {
+            other.m_region_begin = nullptr;
+            other.m_region_end = nullptr;
+            other.m_free_head = nullptr;
+        }
+
+        FreeListAllocator& operator=(FreeListAllocator&& other) noexcept
+        {
+            if (this != &other)
+            {
+                m_region_begin = other.m_region_begin;
+                m_region_end = other.m_region_end;
+                m_free_head = other.m_free_head;
+                other.m_region_begin = nullptr;
+                other.m_region_end = nullptr;
+                other.m_free_head = nullptr;
+            }
+            return *this;
+        }
+
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
             if (size == 0)
                 return { nullptr, 0 };

@@ -38,13 +38,21 @@ namespace MemCore
         [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept;
         void deallocate(void* ptr, std::size_t size) noexcept;
 
-        [[nodiscard]] bool owns(const void* ptr) const noexcept 
-        {
-            // Direct OS page allocation does not make ownership easy to verify without tracking an address table.
-            // For the upstream layer, return true if the pointer is not null.
-            return ptr != nullptr;
-        }
+        // NOTE: VirtualUpstream deliberately provides NO owns().
+        //
+        // Each allocation is an independent OS mapping, so there is no
+        // contiguous range to test a pointer against; answering correctly would
+        // require tracking every mapping in a side table -- overhead that
+        // defeats a thin OS passthrough. The previous implementation returned
+        // `ptr != nullptr`, which claimed ownership of *every* non-null pointer
+        // and would have made FallbackAllocator route every deallocation here.
+        //
+        // Like MallocUpstream, it therefore models Allocator but not
+        // OwningAllocator, and may only be a FallbackAllocator's fallback leg.
 
         [[nodiscard]] std::size_t get_page_size() const noexcept { return m_page_size; }
     };
+
+    static_assert(Allocator<VirtualUpstream>);
+    static_assert(!OwningAllocator<VirtualUpstream>);
 }

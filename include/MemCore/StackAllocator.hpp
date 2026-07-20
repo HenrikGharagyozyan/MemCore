@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cassert>
+#include <new> // placement new for the block Header
 
 namespace MemCore 
 {
@@ -23,14 +24,45 @@ namespace MemCore
     public:
         using Marker = std::size_t;
 
-        explicit StackAllocator(Block memory) noexcept 
+        explicit StackAllocator(Block memory) noexcept
             : m_memory(memory)
-            , m_offset(0) 
+            , m_offset(0)
         {
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) noexcept 
+        // Copying would duplicate the cursor over the SAME region, so two
+        // allocators would hand out overlapping memory. Move instead, which
+        // leaves the source empty (its allocate() then returns nullptr).
+        StackAllocator(const StackAllocator&) = delete;
+        StackAllocator& operator=(const StackAllocator&) = delete;
+
+        StackAllocator(StackAllocator&& other) noexcept
+            : m_memory(other.m_memory)
+            , m_offset(other.m_offset)
         {
+            other.m_memory = { nullptr, 0 };
+            other.m_offset = 0;
+        }
+
+        StackAllocator& operator=(StackAllocator&& other) noexcept
+        {
+            if (this != &other)
+            {
+                m_memory = other.m_memory;
+                m_offset = other.m_offset;
+                other.m_memory = { nullptr, 0 };
+                other.m_offset = 0;
+            }
+            return *this;
+        }
+
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
+        {
+            // Zero-size requests yield no object; an empty (e.g. moved-from)
+            // allocator owns no memory.
+            if (size == 0 || !m_memory.ptr)
+                return { nullptr, 0 };
+
             std::byte* base = static_cast<std::byte*>(m_memory.ptr);
             
             // 1. Calculate where user data can minimally begin.

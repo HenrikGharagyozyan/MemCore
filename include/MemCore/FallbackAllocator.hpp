@@ -20,7 +20,7 @@ namespace MemCore
         {
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) 
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
             // 1. First, try to allocate memory from the fast primary allocator
             Block block = m_primary->allocate(size, alignment);

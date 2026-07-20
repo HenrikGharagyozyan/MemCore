@@ -85,7 +85,7 @@ namespace MemCore
             other.m_head = nullptr;
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) noexcept 
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept 
         {
             if (size == 0) 
                 return { nullptr, 0 };

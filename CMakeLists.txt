@@ -75,6 +75,26 @@ endif()
 option(MEMCORE_BUILD_TESTS "Build the MemCore unit tests" ${PROJECT_IS_TOP_LEVEL})
 
 if(MEMCORE_BUILD_TESTS)
+    # --- Header self-containment ------------------------------------------
+    # Every public header must compile on its own. Generate a TU per header
+    # that includes only that header; a missing include then breaks the build
+    # instead of silently working via some other header's transitive includes.
+    file(GLOB MEMCORE_PUBLIC_HEADERS CONFIGURE_DEPENDS
+        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/MemCore/*.hpp)
+
+    set(MEMCORE_HEADER_CHECK_SRCS "")
+    foreach(header ${MEMCORE_PUBLIC_HEADERS})
+        string(REPLACE "/" "_" check_stem "${header}")
+        string(REPLACE ".hpp" "" check_stem "${check_stem}")
+        set(check_src "${CMAKE_CURRENT_BINARY_DIR}/header_checks/${check_stem}.cpp")
+        file(WRITE "${check_src}" "#include <${header}>\n")
+        list(APPEND MEMCORE_HEADER_CHECK_SRCS "${check_src}")
+    endforeach()
+
+    add_library(MemCore_HeaderChecks OBJECT ${MEMCORE_HEADER_CHECK_SRCS})
+    target_link_libraries(MemCore_HeaderChecks PRIVATE MemCore)
+
     include(FetchContent)
     FetchContent_Declare(
       googletest

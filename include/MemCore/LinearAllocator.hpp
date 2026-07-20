@@ -14,14 +14,45 @@ namespace MemCore
 
     public:
         // The allocator does not allocate memory itself; it takes an existing chunk from outside
-        explicit LinearAllocator(Block memory) noexcept 
+        explicit LinearAllocator(Block memory) noexcept
             : m_memory(memory)
-            , m_offset(0) 
+            , m_offset(0)
         {
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) noexcept 
+        // Copying would duplicate the cursor over the SAME region, so two
+        // allocators would hand out overlapping memory. Move instead, which
+        // leaves the source empty (its allocate() then returns nullptr).
+        LinearAllocator(const LinearAllocator&) = delete;
+        LinearAllocator& operator=(const LinearAllocator&) = delete;
+
+        LinearAllocator(LinearAllocator&& other) noexcept
+            : m_memory(other.m_memory)
+            , m_offset(other.m_offset)
         {
+            other.m_memory = { nullptr, 0 };
+            other.m_offset = 0;
+        }
+
+        LinearAllocator& operator=(LinearAllocator&& other) noexcept
+        {
+            if (this != &other)
+            {
+                m_memory = other.m_memory;
+                m_offset = other.m_offset;
+                other.m_memory = { nullptr, 0 };
+                other.m_offset = 0;
+            }
+            return *this;
+        }
+
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
+        {
+            // Zero-size requests yield no object; an empty (e.g. moved-from)
+            // allocator owns no memory.
+            if (size == 0 || !m_memory.ptr)
+                return { nullptr, 0 };
+
             // std::byte* lets us do byte-wise pointer arithmetic
             std::byte* base = static_cast<std::byte*>(m_memory.ptr);
             std::byte* current_ptr = base + m_offset;

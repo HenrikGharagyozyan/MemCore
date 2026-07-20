@@ -46,7 +46,7 @@ namespace MemCore
         {
         }
 
-        Block allocate(std::size_t size, std::size_t alignment)
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
             if (size == 0)
                 return { nullptr, 0 };
