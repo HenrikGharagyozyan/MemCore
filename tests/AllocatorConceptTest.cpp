@@ -166,15 +166,21 @@ TEST(AllocatorConcept, ThreadSafeAllocatorComposesWithStlAdapter)
     LinearAllocator lin(chunk);
     ThreadSafeAllocator<LinearAllocator> safe(lin);
 
-    using Alloc = StlAdapter<int, ThreadSafeAllocator<LinearAllocator>>;
-    std::vector<int, Alloc> v{ Alloc(safe) };
+    // The container MUST be destroyed before the backing region is released:
+    // its destructor hands memory back to the allocator, and some standard
+    // libraries (MSVC's debug STL, via its container proxy) touch that memory
+    // on teardown. Freeing `chunk` first is a use-after-free.
+    {
+        using Alloc = StlAdapter<int, ThreadSafeAllocator<LinearAllocator>>;
+        std::vector<int, Alloc> v{ Alloc(safe) };
 
-    for (int i = 0; i < 32; ++i)
-        v.push_back(i);
+        for (int i = 0; i < 32; ++i)
+            v.push_back(i);
 
-    EXPECT_EQ(v.size(), 32u);
-    EXPECT_EQ(v[31], 31);
-    EXPECT_TRUE(safe.owns(v.data()));
+        EXPECT_EQ(v.size(), 32u);
+        EXPECT_EQ(v[31], 31);
+        EXPECT_TRUE(safe.owns(v.data()));
+    }
 
     up.deallocate(chunk.ptr, chunk.size);
 }
