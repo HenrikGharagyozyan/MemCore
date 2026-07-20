@@ -49,7 +49,7 @@ namespace MemCore
 
     public:
         // Allocate memory honoring the requested alignment.
-        Block allocate(std::size_t size, std::size_t alignment) noexcept
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
             if (size == 0)
                 return { nullptr, 0 };

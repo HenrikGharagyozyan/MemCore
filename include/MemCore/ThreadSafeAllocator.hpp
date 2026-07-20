@@ -42,7 +42,7 @@ namespace MemCore
         /**
          * @brief Allocates memory while holding the mutex.
          */
-        Block allocate(std::size_t size, std::size_t alignment) noexcept
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
             std::lock_guard<Mutex> lock(m_mutex);
             return m_allocator.allocate(size, alignment);

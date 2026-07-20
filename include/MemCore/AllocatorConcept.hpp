@@ -66,7 +66,10 @@ namespace MemCore
     concept Allocator = requires(T a, std::size_t size, std::size_t alignment, void* ptr)
     {
         // Take a size and an alignment, return our Block structure.
-        { a.allocate(size, alignment) } -> std::same_as<Block>;
+        // Allocation is noexcept: exhaustion is reported by returning
+        // { nullptr, 0 }, never by throwing. Requiring it here makes that
+        // documented guarantee binding rather than a convention.
+        { a.allocate(size, alignment) } noexcept -> std::same_as<Block>;
 
         // Free memory. Deallocation must never throw (like a destructor).
         { a.deallocate(ptr, size) } noexcept;

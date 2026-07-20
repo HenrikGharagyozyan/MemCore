@@ -118,7 +118,7 @@ namespace MemCore
             return *this;
         }
 
-        Block allocate(std::size_t size, std::size_t alignment) noexcept 
+        [[nodiscard]] Block allocate(std::size_t size, std::size_t alignment) noexcept 
         {
             // Zero-size requests yield no object.
             if (size == 0)

@@ -14,15 +14,20 @@ namespace MemCore
     template <typename T, Allocator AllocatorType>
     class StlAdapter
     {
+        // Every StlAdapter instantiation over the same allocator is one family:
+        // rebinding (StlAdapter<U, A>) and comparison need to read each other's
+        // pointer, which is why they are friends rather than the member public.
+        template <typename U, Allocator A>
+        friend class StlAdapter;
+
+        AllocatorType* m_allocator;
+
     public:
         using value_type = T;
 
-        // We need a pointer to our custom allocator
-        AllocatorType* m_allocator;
-
         // Constructor takes a reference to our allocator
-        explicit StlAdapter(AllocatorType& allocator) noexcept 
-            : m_allocator(&allocator) 
+        explicit StlAdapter(AllocatorType& allocator) noexcept
+            : m_allocator(&allocator)
         {
         }
 
