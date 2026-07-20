@@ -6,6 +6,7 @@
 #include <MemCore/LinearAllocator.hpp>
 #include <MemCore/StackAllocator.hpp>
 #include <MemCore/PoolAllocator.hpp>
+#include <MemCore/FreeListAllocator.hpp>
 #include <MemCore/ArenaAllocator.hpp>
 #include <MemCore/CanaryAllocator.hpp>
 #include <MemCore/TrackerAllocator.hpp>
@@ -14,6 +15,8 @@
 #include <MemCore/StlAdapter.hpp>
 
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 using namespace MemCore;
 
@@ -79,6 +82,45 @@ static_assert(Allocator<TrackerAllocator<ThreadSafeAllocator<LinearAllocator>>>)
 static_assert(Allocator<ArenaAllocator<ThreadSafeAllocator<MallocUpstream>>>);
 
 // --- Runtime sanity: owns() actually routes by range ----------------------
+
+// --- Copy/move semantics (API freeze) -------------------------------------
+// Stateful region allocators must NOT be copyable: a copy would duplicate the
+// cursor/free list over the same region and hand out overlapping memory.
+// They are movable instead, leaving the source empty.
+static_assert(!std::is_copy_constructible_v<LinearAllocator>);
+static_assert(!std::is_copy_constructible_v<StackAllocator>);
+static_assert(!std::is_copy_constructible_v<PoolAllocator>);
+static_assert(!std::is_copy_constructible_v<FreeListAllocator>);
+
+static_assert(std::is_move_constructible_v<LinearAllocator>);
+static_assert(std::is_move_constructible_v<StackAllocator>);
+static_assert(std::is_move_constructible_v<PoolAllocator>);
+static_assert(std::is_move_constructible_v<FreeListAllocator>);
+
+// A moved-from region allocator is empty and safe to touch: it must not hand
+// out memory, and must not claim to own anything.
+TEST(AllocatorConcept, MovedFromRegionAllocatorIsEmpty)
+{
+    MallocUpstream up;
+    Block chunk = up.allocate(1024, 16);
+
+    LinearAllocator src(chunk);
+    Block before = src.allocate(64, 8);
+    ASSERT_NE(before.ptr, nullptr);
+
+    LinearAllocator dst(std::move(src));
+
+    // The moved-to allocator keeps serving from the region...
+    Block after = dst.allocate(64, 8);
+    EXPECT_NE(after.ptr, nullptr);
+    EXPECT_TRUE(dst.owns(after.ptr));
+
+    // ...and the moved-from one is inert rather than aliasing the same memory.
+    EXPECT_EQ(src.allocate(64, 8).ptr, nullptr);
+    EXPECT_FALSE(src.owns(after.ptr));
+
+    up.deallocate(chunk.ptr, chunk.size);
+}
 
 // Regression for the API freeze: a ThreadSafeAllocator can be handed to an STL
 // container through StlAdapter. This did not compile before its operations were
