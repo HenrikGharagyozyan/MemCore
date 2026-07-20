@@ -97,6 +97,40 @@ static_assert(std::is_move_constructible_v<StackAllocator>);
 static_assert(std::is_move_constructible_v<PoolAllocator>);
 static_assert(std::is_move_constructible_v<FreeListAllocator>);
 
+// The contract says a zero-size request yields { nullptr, 0 } for EVERY
+// allocator. This was inconsistent before the API freeze (half returned a
+// non-null pointer), so it is pinned down here.
+TEST(AllocatorConcept, ZeroSizeAllocationReturnsNullEverywhere)
+{
+    MallocUpstream up;
+    Block r1 = up.allocate(4096, 16);
+    Block r2 = up.allocate(4096, 16);
+    Block r3 = up.allocate(4096, 16);
+    Block r4 = up.allocate(4096, 16);
+
+    LinearAllocator lin(r1);
+    StackAllocator stk(r2);
+    PoolAllocator pool(r3, 64, 16);
+    FreeListAllocator fl(r4);
+    ArenaAllocator<MallocUpstream> arena(up);
+    CanaryAllocator<LinearAllocator> canary(lin);
+    TrackerAllocator<MallocUpstream> tracker(up);
+
+    EXPECT_EQ(up.allocate(0, 8).ptr, nullptr)      << "MallocUpstream";
+    EXPECT_EQ(lin.allocate(0, 8).ptr, nullptr)     << "LinearAllocator";
+    EXPECT_EQ(stk.allocate(0, 8).ptr, nullptr)     << "StackAllocator";
+    EXPECT_EQ(pool.allocate(0, 8).ptr, nullptr)    << "PoolAllocator";
+    EXPECT_EQ(fl.allocate(0, 8).ptr, nullptr)      << "FreeListAllocator";
+    EXPECT_EQ(arena.allocate(0, 8).ptr, nullptr)   << "ArenaAllocator";
+    EXPECT_EQ(canary.allocate(0, 8).ptr, nullptr)  << "CanaryAllocator";
+    EXPECT_EQ(tracker.allocate(0, 8).ptr, nullptr) << "TrackerAllocator";
+
+    up.deallocate(r1.ptr, r1.size);
+    up.deallocate(r2.ptr, r2.size);
+    up.deallocate(r3.ptr, r3.size);
+    up.deallocate(r4.ptr, r4.size);
+}
+
 // A moved-from region allocator is empty and safe to touch: it must not hand
 // out memory, and must not claim to own anything.
 TEST(AllocatorConcept, MovedFromRegionAllocatorIsEmpty)

@@ -50,6 +50,10 @@ namespace MemCore
 
         Block allocate(std::size_t size, std::size_t alignment)
         {
+            // Zero-size requests yield no object.
+            if (size == 0)
+                return { nullptr, 0 };
+
             // The upstream base must be aligned for the Header AND the caller's
             // request; the payload is then aligned by shifting forward.
             std::size_t actual_align = std::max(alignment, alignof(Header));

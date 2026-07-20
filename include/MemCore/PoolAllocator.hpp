@@ -120,8 +120,12 @@ namespace MemCore
 
         Block allocate(std::size_t size, std::size_t alignment) noexcept 
         {
+            // Zero-size requests yield no object.
+            if (size == 0)
+                return { nullptr, 0 };
+
             // The pool is strict: it can only return its fixed size and alignment
-            if (size > m_chunk_size || alignment > m_alignment || !m_free_list) 
+            if (size > m_chunk_size || alignment > m_alignment || !m_free_list)
             {
                 return { nullptr, 0 };
             }

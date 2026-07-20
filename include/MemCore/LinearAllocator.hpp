@@ -48,8 +48,9 @@ namespace MemCore
 
         Block allocate(std::size_t size, std::size_t alignment) noexcept
         {
-            // Empty (e.g. moved-from) allocator owns no memory.
-            if (!m_memory.ptr)
+            // Zero-size requests yield no object; an empty (e.g. moved-from)
+            // allocator owns no memory.
+            if (size == 0 || !m_memory.ptr)
                 return { nullptr, 0 };
 
             // std::byte* lets us do byte-wise pointer arithmetic
