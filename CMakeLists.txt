@@ -117,6 +117,7 @@ if(MEMCORE_BUILD_TESTS)
         tests/PoolAllocatorTest.cpp
         tests/FreeListAllocatorTest.cpp
         tests/StlAdapterTest.cpp
+        tests/PmrAdapterTest.cpp
         tests/TrackerAllocatorTest.cpp
         tests/FallbackAllocatorTest.cpp
         tests/MemoryHelpersTest.cpp
